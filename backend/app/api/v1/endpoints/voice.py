@@ -121,7 +121,8 @@ async def voice_stream(websocket: WebSocket):
                                 # quota/upstream hiccup shouldn't drop the whole call,
                                 # just this one turn. The customer can keep talking.
                                 try:
-                                    conversation_id, reply_text = await chat_service.send_message(
+                                    # follow_ups (chips) is a text-chat-only concept — irrelevant over voice.
+                                    conversation_id, reply_text, _follow_ups = await chat_service.send_message(
                                         db, user, conversation_id, user_text
                                     )
                                 except chat_service.AssistantUnavailableError as e:

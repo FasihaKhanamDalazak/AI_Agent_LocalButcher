@@ -39,11 +39,11 @@ async def chat(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        conversation_id, reply = await chat_service.send_message(
+        conversation_id, reply, follow_ups = await chat_service.send_message(
             db, current_user, data.conversation_id, data.message
         )
     except chat_service.ConversationNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
     except chat_service.AssistantUnavailableError as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
-    return ChatResponse(conversation_id=conversation_id, reply=reply)
+    return ChatResponse(conversation_id=conversation_id, reply=reply, follow_ups=follow_ups)

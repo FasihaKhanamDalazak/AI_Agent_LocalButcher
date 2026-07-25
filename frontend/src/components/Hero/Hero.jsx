@@ -1,6 +1,4 @@
 import { useReveal } from "../../hooks/useReveal.js";
-import SuggestedChips from "../SuggestedChips/SuggestedChips.jsx";
-import { STARTER_CHIPS } from "../../utils/constants.js";
 import { Typewriter } from "react-simple-typewriter";
 
 const FLOATIES = [
@@ -16,14 +14,10 @@ const FLOATIES = [
  * Landing hero. Reproduces localbutcher.com's headline treatment —
  * the exact fade-up reveal and shimmering gradient text — rebuilt for
  * Ria's chat landing rather than the marketing site.
- *
- * @param {(question: string) => void} onStarterSelect
- * @param {boolean} [chipsDisabled=false] - true while the greeting is still loading
  */
-function Hero({ onStarterSelect, chipsDisabled = false }) {
+function Hero() {
   const titleIn = useReveal(60);
   const subIn = useReveal(120);
-  const chipsIn = useReveal(240);
 
   return (
     <section className="relative overflow-hidden px-6 pb-8 pt-16 sm:px-8 sm:pt-24">
@@ -79,10 +73,6 @@ function Hero({ onStarterSelect, chipsDisabled = false }) {
             </span>
           </span>
         </p>
-
-        <div className={`reveal ${chipsIn ? "in" : ""} mt-9 w-full`}>
-          <SuggestedChips chips={STARTER_CHIPS} onSelect={onStarterSelect} disabled={chipsDisabled} />
-        </div>
       </div>
     </section>
   );

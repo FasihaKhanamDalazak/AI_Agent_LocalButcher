@@ -11,6 +11,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     conversation_id: uuid.UUID
     reply: str
+    follow_ups: list[str]
 
 
 class GreetingResponse(BaseModel):

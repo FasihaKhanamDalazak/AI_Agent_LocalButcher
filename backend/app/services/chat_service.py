@@ -1,3 +1,4 @@
+import re
 import uuid
 
 from google.genai import types
@@ -18,6 +19,29 @@ from app.services import cart_service
 # durable in the database; what gets replayed here is just the conversation
 # text so the model has continuity, not the mechanics of how it got there.
 HISTORY_MESSAGE_LIMIT = 20
+
+FOLLOW_UP_CHIP_LIMIT = 2
+
+# Matches the "[[FOLLOWUPS: a | b]]" marker system_prompt.py instructs the
+# model to end its reply with. Parsed out of the SAME reply rather than a
+# second Gemini call — the free tier's 20 requests/day makes a follow-up
+# call per turn too expensive. re.DOTALL so a suggestion can't accidentally
+# break the match if the model wraps text oddly.
+_FOLLOWUP_MARKER_RE = re.compile(r"\n*\[\[FOLLOWUPS:(.*?)\]\]\s*$", re.IGNORECASE | re.DOTALL)
+
+
+def _extract_follow_ups(reply_text: str) -> tuple[str, list[str]]:
+    """
+    If the model skips the marker or malforms it, this just yields zero
+    chips for that turn — never an error. The visible reply is returned
+    unchanged in that case (nothing to strip).
+    """
+    match = _FOLLOWUP_MARKER_RE.search(reply_text)
+    if not match:
+        return reply_text, []
+    cleaned = reply_text[: match.start()].rstrip()
+    follow_ups = [item.strip() for item in match.group(1).split("|") if item.strip()]
+    return cleaned, follow_ups[:FOLLOW_UP_CHIP_LIMIT]
 
 
 class ConversationNotFoundError(Exception):
@@ -80,7 +104,7 @@ async def _build_cart_grounding_note(db: AsyncSession, user_id: uuid.UUID) -> st
 
 async def send_message(
     db: AsyncSession, user: User, conversation_id: uuid.UUID | None, message: str
-) -> tuple[uuid.UUID, str]:
+) -> tuple[uuid.UUID, str, list[str]]:
     conversation = await _get_or_create_conversation(db, user.id, conversation_id)
     history = await _load_history(db, conversation.id)
 
@@ -90,13 +114,15 @@ async def send_message(
     )
 
     reply_text = await run_conversation_turn(db, user, history, grounded_message)
+    reply_text, follow_ups = _extract_follow_ups(reply_text)
     reply_text = filter_reply(reply_text)
 
     # Persist the ORIGINAL message, not the grounded wrapper — a fresh
     # grounding note gets built every turn, so storing it would just
-    # accumulate stale duplicates in history for no benefit.
+    # accumulate stale duplicates in history for no benefit. follow_ups is
+    # UI-only (chips) and, like the greeting's, deliberately not persisted.
     db.add(Message(conversation_id=conversation.id, role="user", content=message))
     db.add(Message(conversation_id=conversation.id, role="assistant", content=reply_text))
     await db.commit()
 
-    return conversation.id, reply_text
+    return conversation.id, reply_text, follow_ups

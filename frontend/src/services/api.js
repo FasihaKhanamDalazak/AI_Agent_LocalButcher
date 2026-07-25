@@ -65,7 +65,7 @@ export async function getGreeting() {
 /**
  * @param {string} message
  * @param {string|null} conversationId - omit to start a new conversation
- * @returns {Promise<{conversationId: string, reply: string}>}
+ * @returns {Promise<{conversationId: string, reply: string, followUps: string[]}>}
  */
 export async function sendChatMessage(message, conversationId) {
   try {
@@ -73,7 +73,7 @@ export async function sendChatMessage(message, conversationId) {
       message,
       conversation_id: conversationId ?? null,
     });
-    return { conversationId: data.conversation_id, reply: data.reply };
+    return { conversationId: data.conversation_id, reply: data.reply, followUps: data.follow_ups };
   } catch (error) {
     throw normalizeApiError(error);
   }

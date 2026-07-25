@@ -82,7 +82,7 @@ function ChatPage() {
           onScroll={handleScroll}
           className="scrollbar-elegant flex-1 overflow-y-auto"
         >
-          <Hero onStarterSelect={sendMessage} chipsDisabled={isGreeting} />
+          <Hero />
 
           {showConversation && (
             <ChatContainer

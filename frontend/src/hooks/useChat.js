@@ -87,14 +87,14 @@ export function useChat() {
     setIsLoading(true);
 
     try {
-      const { conversationId, reply } = await sendChatMessage(text, conversationIdRef.current);
+      const { conversationId, reply, followUps } = await sendChatMessage(text, conversationIdRef.current);
       conversationIdRef.current = conversationId;
 
       const assistantMessage = {
         id: generateId(),
         role: MESSAGE_ROLES.ASSISTANT,
         text: reply,
-        followUps: [],
+        followUps: followUps ?? [],
         timestamp: new Date(),
       };
 

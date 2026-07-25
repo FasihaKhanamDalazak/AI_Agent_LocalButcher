@@ -56,29 +56,36 @@ async def _get_active_order(db: AsyncSession, user_id: uuid.UUID) -> Order | Non
     return None
 
 
-_NO_ORDER_FOLLOW_UPS = ["Browse today's picks", "Start a new order", "I need help with something"]
-_ACTIVE_ORDER_FOLLOW_UPS = ["View order details", "Cancel this order", "Order something else"]
+_NO_ORDER_FOLLOW_UPS = ["Browse today's picks", "Start a new order"]
+_ACTIVE_ORDER_FOLLOW_UPS = ["View order details", "Cancel this order"]
 
 
 def _build_greeting(user: User, order: Order | None) -> tuple[str, list[str]]:
     """
-    Short and conversational on purpose — capabilities are already covered
-    by the Hero section's own copy, so restating them here as a bullet
-    list was pure duplication. The suggested-action chips (`follow_ups`)
-    carry the "what can I do next" job instead, worded distinctly from
-    Hero's own starter chips so the two don't read as the same list twice.
+    follow_ups (max 2) carries suggested next actions as chips instead of
+    prose, kept out of the greeting text itself.
     """
     first_name = user.name.split()[0] if user.name else "there"
 
     if order is None:
-        return f"Welcome back, {first_name}! Good to see you again — what can I help with today?", list(
-            _NO_ORDER_FOLLOW_UPS
-        )
+        return (
+            f"Welcome back, {first_name}! Great to see you again. I can help you:\n"
+            f"• Place an order\n"
+            f"• Track an existing order\n"
+            f"• Manage your cart\n"
+            f"• Answer questions about our products\n"
+            f"• Get support with any issue\n\n"
+            f"What can I help you with today?"
+        ), list(_NO_ORDER_FOLLOW_UPS)
 
     outlet_name = order.outlet.name if order.outlet else "—"
     greeting = (
-        f"Welcome back, {first_name}! Your order #{order.order_number} from {outlet_name} "
-        f"is **{order.status.label.lower()}** — {_item_list_text(order)}, ETA {_eta_text(order)}."
+        f"Welcome back, {first_name}! Here's where things stand with order #{order.order_number}:\n"
+        f"• Status: {order.status.label}\n"
+        f"• Items: {_item_list_text(order)}\n"
+        f"• Outlet: {outlet_name}\n"
+        f"• ETA: {_eta_text(order)}\n\n"
+        f"Is there anything else I can help you with today?"
     )
     return greeting, list(_ACTIVE_ORDER_FOLLOW_UPS)
 
