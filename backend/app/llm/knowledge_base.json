@@ -1,0 +1,205 @@
+[
+  {
+    "id": "brand-001",
+    "category": "About",
+    "title": "What LocalButcher is",
+    "content": "LocalButcher is an app that delivers fresh poultry, meat, seafood and farm-fresh eggs from your neighbourhood butcher straight to your door. The tagline is 'Butcher to Kitchen. Never Frozen.' Everything is cut today, never frozen, and has zero preservatives — no compromise. LocalButcher is operated by Tahoe Technologies Pvt Ltd, a company incorporated under the Companies Act, 2013, with its registered office in Hyderabad, Telangana, India.",
+    "source_url": "https://www.localbutcher.in/"
+  },
+  {
+    "id": "brand-002",
+    "category": "About",
+    "title": "Why LocalButcher is different from frozen/online meat delivery",
+    "content": "Most online meat delivery is frozen for weeks and pumped with preservatives. LocalButcher is different: your order is cut AFTER you place it and delivered fresh the same day, exactly as it left the block. There are no dark stores — every order supports a real, local, trusted neighbourhood butcher, now with the convenience of an app. If it's frozen, it's not LocalButcher.",
+    "source_url": "https://www.localbutcher.in/"
+  },
+  {
+    "id": "howitworks-001",
+    "category": "How it works",
+    "title": "Step 1 — Pick your cuts",
+    "content": "Browse your neighbourhood butcher's live catalogue in the app. Choose the cut, weight and prep you want — for example curry cut, boneless, deveined, or cleaned.",
+    "source_url": "https://www.localbutcher.in/#how"
+  },
+  {
+    "id": "howitworks-002",
+    "category": "How it works",
+    "title": "Step 2 — Pay securely",
+    "content": "Checkout in seconds using UPI or card. Every order is fully prepaid and fully transparent — no surprises, and no cash on delivery at the door.",
+    "source_url": "https://www.localbutcher.in/#how"
+  },
+  {
+    "id": "howitworks-003",
+    "category": "How it works",
+    "title": "Step 3 — Get it fresh",
+    "content": "Your order is cut to order, packed cold, and rushed to you by your butcher's own delivery rider. You can track every step live until it reaches your door.",
+    "source_url": "https://www.localbutcher.in/#how"
+  },
+  {
+    "id": "categories-001",
+    "category": "Categories",
+    "title": "Poultry",
+    "content": "Chicken, country chicken and more, available as curry cut, boneless or whole — cut fresh to your preference.",
+    "source_url": "https://www.localbutcher.in/#categories"
+  },
+  {
+    "id": "categories-002",
+    "category": "Categories",
+    "title": "Meat",
+    "content": "Mutton, lamb and specialty cuts, hand-trimmed to order by your neighbourhood butcher.",
+    "source_url": "https://www.localbutcher.in/#categories"
+  },
+  {
+    "id": "categories-003",
+    "category": "Categories",
+    "title": "Seafood",
+    "content": "Fish, prawns and crab, cleaned, deveined and ready to cook.",
+    "source_url": "https://www.localbutcher.in/#categories"
+  },
+  {
+    "id": "categories-004",
+    "category": "Categories",
+    "title": "Farm Eggs",
+    "content": "Farm-fresh eggs sold by the pack, delivered with care alongside your meat and seafood order.",
+    "source_url": "https://www.localbutcher.in/#categories"
+  },
+  {
+    "id": "features-001",
+    "category": "Why us",
+    "title": "Never frozen, never preserved",
+    "content": "Your order is cut after you place it and delivered fresh the same day, exactly as it left the butcher's block. No freezers, no preservatives.",
+    "source_url": "https://www.localbutcher.in/#features"
+  },
+  {
+    "id": "features-002",
+    "category": "Why us",
+    "title": "Live order tracking",
+    "content": "You can watch your delivery rider live on the map, all the way from the shop to your doorstep.",
+    "source_url": "https://www.localbutcher.in/#features"
+  },
+  {
+    "id": "features-003",
+    "category": "Why us",
+    "title": "Cut your way",
+    "content": "You choose exactly how your order is prepared — boneless, curry cut, cleaned or deveined, it's your call.",
+    "source_url": "https://www.localbutcher.in/#features"
+  },
+  {
+    "id": "features-004",
+    "category": "Why us",
+    "title": "Secure prepaid checkout",
+    "content": "Payments are made via UPI or card only. There is no cash on delivery, so there's no cash, no contact and no fuss at the door.",
+    "source_url": "https://www.localbutcher.in/#features"
+  },
+  {
+    "id": "features-005",
+    "category": "Why us",
+    "title": "Your neighbourhood butcher, online",
+    "content": "LocalButcher does not run dark stores. Every single order supports a real local butcher shop that customers already trust, now available through the app.",
+    "source_url": "https://www.localbutcher.in/#features"
+  },
+  {
+    "id": "wallet-001",
+    "category": "Wallet & cashback",
+    "title": "How the cashback wallet works",
+    "content": "Customers earn 5% of every order's value back as wallet credit, added automatically after delivery. The wallet balance can be used to pay for, or offset the cost of, any future order at checkout.",
+    "source_url": "https://www.localbutcher.in/support.html"
+  },
+  {
+    "id": "orders-001",
+    "category": "Orders",
+    "title": "How to cancel an order",
+    "content": "Open the order from Order History in the app and tap Cancel Order. Orders can be cancelled free of charge any time before the butcher accepts and starts preparing it. Once an order is being packed or is out for delivery, it can no longer be cancelled from the app — in that case, message support on WhatsApp for help.",
+    "source_url": "https://www.localbutcher.in/support.html"
+  },
+  {
+    "id": "orders-002",
+    "category": "Orders",
+    "title": "How refunds work",
+    "content": "Refunds are automatic for any order that is cancelled before preparation begins, or that fails to reach the customer. The refund amount is credited instantly to the LocalButcher wallet, or, if preferred, back to the original payment method within 5 to 7 business days — customers just need to request that via WhatsApp or email.",
+    "source_url": "https://www.localbutcher.in/support.html"
+  },
+  {
+    "id": "orders-003",
+    "category": "Orders",
+    "title": "How to report a quality issue",
+    "content": "Go to the relevant order in Order History and tap Report an Issue within 24 hours of delivery, adding a photo and a short note. The support team personally reviews every report and offers a replacement, wallet credit, or refund depending on the issue, no questions asked.",
+    "source_url": "https://www.localbutcher.in/support.html"
+  },
+  {
+    "id": "orders-004",
+    "category": "Orders",
+    "title": "What to do if an order is late",
+    "content": "Track the delivery rider live from the Order Tracking screen in the app. If the order is significantly delayed past the estimated time, message support on WhatsApp with the order number and the team will check in with the shop right away.",
+    "source_url": "https://www.localbutcher.in/support.html"
+  },
+  {
+    "id": "support-001",
+    "category": "Support & contact",
+    "title": "How to reach LocalButcher support",
+    "content": "Support is available on WhatsApp for quick chats, or by email for detailed queries and documentation. The support team is online every day from 6 AM to 9 PM, and usually replies within a few hours. WhatsApp is the fastest way to reach a real person for order issues.",
+    "source_url": "https://www.localbutcher.in/support.html"
+  },
+  {
+    "id": "app-001",
+    "category": "Getting the app",
+    "title": "How to download the LocalButcher app",
+    "content": "LocalButcher is available on both the App Store (iPhone/iPad) and Google Play (Android). Customers can scan the QR code on the website with their phone camera, or search 'LocalButcher' on the App Store or Google Play, to download the app and place their first order in minutes.",
+    "source_url": "https://www.localbutcher.in/#download"
+  },
+  {
+    "id": "partners-001",
+    "category": "For butchers / partner shops",
+    "title": "How butchers can join LocalButcher",
+    "content": "Butcher shops can join LocalButcher to reach more customers without changing how they work. Shop owners manage their own catalogue, prices and orders from one simple app — it stays their shop, their delivery rider, and their prices. Benefits include: listing cuts and setting your own markups, accepting and managing orders in real time, using your own delivery rider for your own area, and receiving daily settlements that are fully transparent. Interested shop owners can apply through the 'List your shop' inquiry form on the website.",
+    "source_url": "https://www.localbutcher.in/inquiry.html?purpose=shop_listing"
+  },
+  {
+    "id": "privacy-001",
+    "category": "Privacy & data",
+    "title": "What personal data LocalButcher collects",
+    "content": "LocalButcher collects: phone number (for account creation, OTP login, order confirmations and delivery updates), precise location (only while the app is in use, to find the delivery address and nearby shops), order history (items, value, timestamps and addresses, used for the wallet and support), basic device information (for debugging), and payment information. Card and UPI details are never stored by LocalButcher — payments are processed by Cashfree Payments (PCI-DSS compliant), and LocalButcher only stores the transaction ID and payment status.",
+    "source_url": "https://www.localbutcher.in/privacy-policy.html"
+  },
+  {
+    "id": "privacy-002",
+    "category": "Privacy & data",
+    "title": "How LocalButcher uses and shares data",
+    "content": "Data is used to process and deliver orders, manage the cashback wallet, send order updates, provide customer support (including the in-app support agent, Meera), improve the app, and comply with the law. Data is shared only with: the vendor shop fulfilling the order (name, phone, address), delivery riders (name and address for last-mile delivery), Cashfree Payments (for processing payments), and legal authorities when required by law. LocalButcher does not sell personal data to third parties, ever.",
+    "source_url": "https://www.localbutcher.in/privacy-policy.html"
+  },
+  {
+    "id": "privacy-003",
+    "category": "Privacy & data",
+    "title": "Data retention and user rights",
+    "content": "Account data is retained for the life of the account plus 3 years after deletion for legal/tax reasons. Order history is retained for 7 years to meet GST compliance requirements under Indian law. Location data is not stored beyond the active session. Under India's Digital Personal Data Protection Act, 2023 (DPDP Act), users can access their data, correct inaccurate data, request erasure (subject to legal retention rules), and withdraw consent at any time, by deleting their account in the app or contacting support.",
+    "source_url": "https://www.localbutcher.in/privacy-policy.html"
+  },
+  {
+    "id": "delete-001",
+    "category": "Account deletion",
+    "title": "How to delete your account from the app",
+    "content": "In the Customer app: go to Profile, tap Delete Account, and confirm — you're signed out immediately and the account is deleted. In the Vendor (shop owner) app: go to the Shop tab, tap Delete Account, and confirm. In the Vendor (head butcher) app: go to the Account tab, tap Delete Account, and confirm. In the Driver app: go to Profile, tap Delete Account, and confirm. Account deletion works the same way for the Customer, Vendor and Driver apps.",
+    "source_url": "https://www.localbutcher.in/delete-account.html"
+  },
+  {
+    "id": "delete-002",
+    "category": "Account deletion",
+    "title": "How to request account deletion without the app",
+    "content": "If a user has uninstalled the app or can't sign in, they can email support from the phone number or email associated with their account, using the subject line 'Delete my account' and including their registered phone number. Deletion requests are processed within 7 business days, and support confirms by email once it's complete.",
+    "source_url": "https://www.localbutcher.in/delete-account.html"
+  },
+  {
+    "id": "delete-003",
+    "category": "Account deletion",
+    "title": "What happens when an account is deleted",
+    "content": "Account deletion is permanent and cannot be undone; the registered phone number is freed up and can be used to make a new account. Deleted immediately: profile info (name, saved addresses), wallet balance, referral data, active push-notification tokens, and saved payment methods on file with the payment processor. Retained for legal reasons: order history and transaction records for 7 years (GST/Indian tax law), and account data for up to 3 years post-deletion where required for legal, tax or fraud-prevention purposes — this retained data is disassociated from active app use and not used for any other purpose.",
+    "source_url": "https://www.localbutcher.in/delete-account.html"
+  },
+  {
+    "id": "meta-001",
+    "category": "Misc",
+    "title": "What LocalButcher does not offer through this chat",
+    "content": "This chat assistant does not have access to real-time inventory, live pricing, or a specific customer's live order status for a specific shop, since prices and stock vary by neighbourhood butcher and change through the day. For live order tracking, current prices near you, or placing an order, customers should use the LocalButcher app. For anything account-specific (a live order, a refund already in progress, a payment issue), the chat should point the customer to WhatsApp or email support.",
+    "source_url": "https://www.localbutcher.in/"
+  }
+]
