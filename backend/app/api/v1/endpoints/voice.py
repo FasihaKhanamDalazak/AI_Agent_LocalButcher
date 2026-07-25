@@ -4,12 +4,24 @@ import json
 import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from limits import RateLimitItemPerMinute, storage, strategies
 
 from app.api.deps import get_user_from_token
 from app.db.session import AsyncSessionLocal
 from app.services import chat_service, greeting_service, voice_service
 
 router = APIRouter()
+
+# slowapi's decorator only covers regular HTTP routes, not WebSockets, but
+# this is the single most expensive endpoint in the app (continuous
+# Deepgram audio streaming) — worth a basic guard against a client rapidly
+# opening connections. Limits new CONNECTIONS per user, not messages within
+# one; a real conversation is one long-lived connection, so this doesn't
+# affect normal use. Same in-memory/single-instance caveat as the app's
+# main rate limiter.
+_connection_storage = storage.MemoryStorage()
+_connection_limiter = strategies.FixedWindowRateLimiter(_connection_storage)
+_connection_rate = RateLimitItemPerMinute(5)
 
 
 async def _send_json(websocket: WebSocket, payload: dict) -> None:
@@ -56,6 +68,10 @@ async def voice_stream(websocket: WebSocket):
         user = await get_user_from_token(token, db) if token else None
         if user is None:
             await websocket.close(code=4401, reason="invalid or missing token")
+            return
+
+        if not _connection_limiter.hit(_connection_rate, str(user.id)):
+            await websocket.close(code=4429, reason="too many connection attempts, slow down")
             return
 
         await websocket.accept()

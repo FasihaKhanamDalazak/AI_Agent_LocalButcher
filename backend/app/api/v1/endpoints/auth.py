@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.core.rate_limit import limiter
 from app.core.security import create_access_token
 from app.db.session import get_db
 from app.models.user import User
@@ -13,8 +14,11 @@ from app.services import auth_service
 router = APIRouter()
 
 
+# Stricter than the app default (60/minute) — these are the two endpoints
+# a brute-force/credential-stuffing attempt would actually hit.
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
-async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def register(request: Request, data: UserCreate, db: AsyncSession = Depends(get_db)):
     try:
         user = await auth_service.register_user(db, data)
     except auth_service.EmailAlreadyRegisteredError:
@@ -23,7 +27,8 @@ async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
     # form_data.username carries the email — this is standard OAuth2 password
     # flow shape, which is also what makes Swagger's "Authorize" button work
     # out of the box for testing in /docs.

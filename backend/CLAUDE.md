@@ -270,6 +270,33 @@ with pyttsx3 and streams it into the socket in place of a live
 microphone — a legitimate way to test the full loop without needing a
 browser or real mic.
 
+## Hardening
+
+**Rate limiting** (`app/core/rate_limit.py`) — `slowapi`, in-memory,
+single-instance. A `default_limits=["60/minute"]` `Limiter` applies to
+every route via `SlowAPIMiddleware`; auth and chat routes declare
+stricter per-route limits with `@limiter.limit(...)` (needs a
+`request: Request` param on the endpoint — that's how slowapi finds the
+caller to key on). The voice WebSocket can't use the same decorator
+(slowapi targets HTTP routes) — it has its own minimal connection-attempt
+limiter built directly on the `limits` package slowapi itself depends on.
+None of this survives a restart or works across multiple processes —
+fine for one instance, would need Redis-backed storage before scaling
+out.
+
+**Global exception handler** (`app/main.py`,
+`@app.exception_handler(Exception)`) — catches anything that isn't a
+deliberate `HTTPException` (those already get FastAPI's normal handling)
+and returns a generic `{"detail": "An unexpected error occurred."}`
+instead of leaking a traceback or internal detail to the client. Always
+logs the real exception server-side first (`logger.exception(...)`) — it
+gets swallowed from the client's view, never from the logs. Verified
+this actually works end-to-end via `TestClient` with a monkeypatched
+service function raising — the middleware ordering with `SlowAPIMiddleware`
+(a `BaseHTTPMiddleware`) is a known Starlette footgun for exception
+handlers in general, so don't assume this still works after touching
+middleware order — re-verify the same way if it changes.
+
 ## Known placeholders — be upfront about these, don't let them pass as finished
 
 - **ETA calculation** (`order_service._calculate_eta`) is prep-time +

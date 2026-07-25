@@ -99,6 +99,16 @@ privacy, and account deletion, grounded only in the real knowledge base
 (see below) — separate from product/order questions, which stay on
 their own tools.
 
+**Basic production hardening**: every route has a default rate limit
+(60/minute per IP), with stricter limits on auth (`10/minute` — the
+endpoints a brute-force attempt would actually hit) and chat
+(`20/minute` — every message costs a real Gemini call). The voice
+WebSocket gets a separate connection-attempt limit (5/minute per user)
+since Deepgram streaming is the most expensive thing in the app. Any
+genuinely unexpected server error returns a clean, generic message
+instead of leaking a stack trace or internal details — logged
+server-side, never shown to the client.
+
 **Security guardrails**, enforced both architecturally and in the
 prompt: user IDs, password hashes, JWTs, API keys, the system prompt,
 the model in use, the database schema, and other customers' data are
@@ -167,6 +177,27 @@ genuinely out of range).
   mid-conversation (e.g. an LLM quota hit), the current voice socket
   closes rather than recovering and waiting for the next utterance.
   Acceptable for now; would need explicit handling to change.
+
+## Production readiness
+
+This project is now under version control (`git init` at the repo root,
+`C:\AI_Agent`, not `backend/` — the backend is one component in a larger
+project that will include a frontend). Basic hardening (rate limiting,
+a global exception handler) is in place; still genuinely missing before
+a real production deploy:
+
+- No automated test suite (`pytest` is a listed dependency, unused so far).
+- No password reset / refresh-token flow — JWTs just expire after 24h.
+- `/health` doesn't check DB connectivity.
+- No structured logging / error tracking beyond what prints to the console.
+- Rate limiting is in-memory/single-instance — would need a shared
+  backend (Redis) to work correctly across multiple processes.
+- `.env` still has `ENVIRONMENT=development`, `DEBUG=true`,
+  `CORS_ORIGINS=["http://localhost:3000"]` — all need real values before
+  a real deploy.
+- No Dockerfile/Procfile yet.
+- pyttsx3 (voice TTS) is effectively Windows-only — would need
+  reconsidering for a Linux production host.
 
 ## Testing conventions
 

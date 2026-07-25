@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.core.rate_limit import limiter
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.chat import ChatRequest, ChatResponse, GreetingResponse
@@ -11,7 +12,9 @@ router = APIRouter()
 
 
 @router.get("/greeting", response_model=GreetingResponse)
+@limiter.limit("10/minute")
 async def get_greeting(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -25,8 +28,12 @@ async def get_greeting(
     return GreetingResponse(conversation_id=conversation_id, greeting=greeting)
 
 
+# Every message here triggers at least one Gemini call (real cost/quota) —
+# limited well below the app default.
 @router.post("", response_model=ChatResponse)
+@limiter.limit("20/minute")
 async def chat(
+    request: Request,
     data: ChatRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
