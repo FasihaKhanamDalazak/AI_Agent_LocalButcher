@@ -6,7 +6,13 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 class UserCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     email: EmailStr
-    phone: str | None = None
+    # Required (not optional) and E.164-shaped — this is the number the
+    # future Twilio calling feature will match an inbound caller against,
+    # so an unvalidated/missing phone here would silently break that
+    # lookup later. Existing accounts predating this rule can still have
+    # phone=None (see UserRead) — this constraint only applies going
+    # forward, at signup.
+    phone: str = Field(pattern=r"^\+[1-9]\d{7,14}$")
     password: str = Field(min_length=8, max_length=128)
     preferred_language: str = "en"
 

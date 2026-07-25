@@ -11,7 +11,7 @@ import httpClient from "./httpClient.js";
 // Auth
 // ---------------------------------------------------------------------------
 
-/** @param {{name: string, email: string, password: string, phone?: string}} data */
+/** @param {{name: string, email: string, password: string, phone: string}} data */
 export async function register(data) {
   try {
     const { data: res } = await httpClient.post("/auth/register", data);
@@ -35,6 +35,18 @@ export async function login(email, password) {
     });
     return data.access_token;
   } catch (error) {
+    // A 401 here means the login attempt itself was rejected (wrong
+    // password OR no account with this email — the backend deliberately
+    // doesn't distinguish the two, to avoid confirming which emails are
+    // registered). That's a different situation from a 401 on an
+    // already-authenticated request, which normalizeApiError's generic
+    // "session expired" copy is written for — so it's handled here
+    // instead of falling through to that shared branch.
+    if (error.response?.status === 401) {
+      throw new Error(
+        "We couldn't log you in with that email and password. New here? Create an account instead."
+      );
+    }
     throw normalizeApiError(error);
   }
 }

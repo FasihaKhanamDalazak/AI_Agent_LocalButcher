@@ -28,7 +28,7 @@ function AuthPage() {
         await register({
           name: form.name,
           email: form.email,
-          phone: form.phone || undefined,
+          phone: form.phone,
           password: form.password,
         });
       }
@@ -92,11 +92,14 @@ function AuthPage() {
 
           {mode === "register" && (
             <TextField
-              label="Phone (optional)"
+              label="Phone"
               type="tel"
               value={form.phone}
               onChange={update("phone")}
               placeholder="+91 98765 43210"
+              required
+              pattern="^\+[1-9]\d{7,14}$"
+              title="Include your country code, e.g. +91 98765 43210"
               autoComplete="tel"
             />
           )}

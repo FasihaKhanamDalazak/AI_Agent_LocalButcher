@@ -23,6 +23,8 @@ async def register(request: Request, data: UserCreate, db: AsyncSession = Depend
         user = await auth_service.register_user(db, data)
     except auth_service.EmailAlreadyRegisteredError:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+    except auth_service.PhoneAlreadyRegisteredError:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Phone number already registered")
     return Token(access_token=create_access_token(subject=str(user.id)))
 
 

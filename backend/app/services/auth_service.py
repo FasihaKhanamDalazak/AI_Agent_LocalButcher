@@ -10,6 +10,10 @@ class EmailAlreadyRegisteredError(Exception):
     pass
 
 
+class PhoneAlreadyRegisteredError(Exception):
+    pass
+
+
 class InvalidCredentialsError(Exception):
     pass
 
@@ -18,6 +22,14 @@ async def register_user(db: AsyncSession, data: UserCreate) -> User:
     existing = await db.execute(select(User).where(User.email == data.email))
     if existing.scalar_one_or_none() is not None:
         raise EmailAlreadyRegisteredError()
+
+    # phone is now required at signup (see UserCreate) and unique at the DB
+    # level — worth checking explicitly, the same as email above, now that
+    # a collision is a realistic case rather than two NULLs (which Postgres
+    # never treats as a uniqueness conflict).
+    existing_phone = await db.execute(select(User).where(User.phone == data.phone))
+    if existing_phone.scalar_one_or_none() is not None:
+        raise PhoneAlreadyRegisteredError()
 
     user = User(
         name=data.name,

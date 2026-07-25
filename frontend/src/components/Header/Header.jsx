@@ -32,10 +32,6 @@ function Header({ onLogoClick, onOpenPanel }) {
           </span>
         </button>
 
-        <span className="hidden font-display text-lg font-normal tracking-tight text-ink sm:inline">
-          AI Assistant
-        </span>
-
         <nav className="flex items-center gap-1" aria-label="Account panels">
           {NAV_ITEMS.map(({ key, label, Icon }) => (
             <Tooltip key={key} label={label} side="bottom">
