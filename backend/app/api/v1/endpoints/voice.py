@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import logging
 import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -11,6 +12,7 @@ from app.db.session import AsyncSessionLocal
 from app.services import chat_service, greeting_service, voice_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # slowapi's decorator only covers regular HTTP routes, not WebSockets, but
 # this is the single most expensive endpoint in the app (continuous
@@ -81,7 +83,10 @@ async def voice_stream(websocket: WebSocket):
 
         try:
             if conversation_id is None:
-                conversation_id, greeting_text = await greeting_service.start_conversation_with_greeting(db, user)
+                # follow_ups (suggested chips) is a text-chat-only concept — nothing to do with it over voice.
+                conversation_id, greeting_text, _follow_ups = await greeting_service.start_conversation_with_greeting(
+                    db, user
+                )
                 await _speak(websocket, conversation_id, greeting_text)
 
             async with voice_service.open_transcription_stream() as dg_socket:
@@ -112,9 +117,16 @@ async def voice_stream(websocket: WebSocket):
                             user_text = " ".join(buffer_parts).strip()
                             buffer_parts.clear()
                             if user_text:
-                                conversation_id, reply_text = await chat_service.send_message(
-                                    db, user, conversation_id, user_text
-                                )
+                                # Caught here, not left to the outer handler below — a
+                                # quota/upstream hiccup shouldn't drop the whole call,
+                                # just this one turn. The customer can keep talking.
+                                try:
+                                    conversation_id, reply_text = await chat_service.send_message(
+                                        db, user, conversation_id, user_text
+                                    )
+                                except chat_service.AssistantUnavailableError as e:
+                                    await _send_json(websocket, {"type": "error", "message": str(e)})
+                                    continue
                                 await _speak(websocket, conversation_id, reply_text)
 
                 forward_task = asyncio.create_task(forward_audio())
@@ -132,9 +144,17 @@ async def voice_stream(websocket: WebSocket):
                         raise exc
         except WebSocketDisconnect:
             pass
-        except Exception as e:
+        except Exception:
+            # Same redaction contract as main.py's REST-side handler: the
+            # real exception (which can be a raw upstream provider error —
+            # e.g. Gemini quota/billing detail — never something to show a
+            # customer) is always logged server-side, but the client only
+            # ever gets a generic message.
+            logger.exception("Unhandled exception on voice WS for user %s", user.id)
             try:
-                await _send_json(websocket, {"type": "error", "message": str(e)})
+                await _send_json(
+                    websocket, {"type": "error", "message": "Something went wrong on our end. Please try again."}
+                )
                 await websocket.close(code=1011, reason="internal error")
             except Exception:
                 pass

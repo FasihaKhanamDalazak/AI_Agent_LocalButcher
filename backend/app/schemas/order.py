@@ -35,6 +35,9 @@ class OrderRead(BaseModel):
     fulfillment_type: str
     total_amount: float
     status: str
+    status_label: str
+    is_modifiable: bool
+    is_cancellable: bool
     eta_start: datetime | None
     eta_end: datetime | None
     created_at: datetime
@@ -47,6 +50,12 @@ def order_to_read(order: "Order") -> OrderRead:
     shape. Used by the REST endpoints AND the LLM tool executor, so a
     customer gets an identical order representation whether they're using
     /docs or the chat assistant.
+
+    is_modifiable/is_cancellable are the SAME order_statuses flags that
+    order_service already enforces server-side (OrderNotModifiableError /
+    OrderNotCancellableError) — exposed here so a UI can hide edit/cancel
+    controls for orders that can't accept them, instead of showing
+    controls that always fail.
     """
     return OrderRead(
         id=order.id,
@@ -56,6 +65,9 @@ def order_to_read(order: "Order") -> OrderRead:
         fulfillment_type=order.fulfillment_type,
         total_amount=float(order.total_amount),
         status=order.status.code,
+        status_label=order.status.label,
+        is_modifiable=order.status.is_modifiable,
+        is_cancellable=order.status.is_cancellable,
         eta_start=order.eta_start,
         eta_end=order.eta_end,
         created_at=order.created_at,

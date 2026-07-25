@@ -24,8 +24,8 @@ async def get_greeting(
     proactive "Welcome back" greeting. Use the returned conversation_id
     for every subsequent POST /chat call in that session.
     """
-    conversation_id, greeting = await greeting_service.start_conversation_with_greeting(db, current_user)
-    return GreetingResponse(conversation_id=conversation_id, greeting=greeting)
+    conversation_id, greeting, follow_ups = await greeting_service.start_conversation_with_greeting(db, current_user)
+    return GreetingResponse(conversation_id=conversation_id, greeting=greeting, follow_ups=follow_ups)
 
 
 # Every message here triggers at least one Gemini call (real cost/quota) —
@@ -44,4 +44,6 @@ async def chat(
         )
     except chat_service.ConversationNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    except chat_service.AssistantUnavailableError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     return ChatResponse(conversation_id=conversation_id, reply=reply)

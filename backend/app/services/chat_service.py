@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.llm.gemini_client import run_conversation_turn
+from app.llm.gemini_client import AssistantUnavailableError, run_conversation_turn  # noqa: F401 - re-exported for callers
 from app.llm.safety_filter import filter_reply
 from app.models.conversation import Conversation, Message
 from app.models.user import User

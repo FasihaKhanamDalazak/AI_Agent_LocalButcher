@@ -1,4 +1,7 @@
+import logging
+
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,6 +10,8 @@ from app.llm.system_prompt import SYSTEM_PROMPT
 from app.llm.tool_executor import execute_tool
 from app.llm.tool_schemas import TOOLS
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 _client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
@@ -19,6 +24,20 @@ _GENERATION_CONFIG = types.GenerateContentConfig(
     system_instruction=SYSTEM_PROMPT,
     tools=[TOOLS],
 )
+
+
+class AssistantUnavailableError(Exception):
+    """
+    Raised whenever the Gemini API call itself fails — quota exhaustion
+    (the free tier's 20 requests/day is easy to hit), an outage, etc.
+    Callers (chat_service, then the REST/voice endpoints) always show this
+    generic message to the customer, never `str(the underlying APIError)`
+    — that object's text is the raw provider response (quota metrics,
+    billing links, retry-delay seconds) and must stay server-log-only.
+    """
+
+    def __init__(self):
+        super().__init__("Ria's a little overwhelmed right now — please try again in a moment.")
 
 
 async def run_conversation_turn(
@@ -35,11 +54,19 @@ async def run_conversation_turn(
     contents = list(history) + [types.Content(role="user", parts=[types.Part(text=user_message)])]
 
     for _ in range(MAX_TOOL_ROUNDS):
-        response = await _client.aio.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=contents,
-            config=_GENERATION_CONFIG,
-        )
+        try:
+            response = await _client.aio.models.generate_content(
+                model=settings.GEMINI_MODEL,
+                contents=contents,
+                config=_GENERATION_CONFIG,
+            )
+        except genai_errors.APIError as e:
+            # Caught here (not left to main.py's global handler) so the
+            # customer-facing message can be specific and on-brand — but
+            # that means this is the only place the real provider error
+            # (quota metrics, billing links, etc.) still reaches the logs.
+            logger.exception("Gemini API call failed")
+            raise AssistantUnavailableError() from e
         model_content = response.candidates[0].content
         contents.append(model_content)
 

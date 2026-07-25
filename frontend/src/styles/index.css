@@ -1,0 +1,206 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-ink font-sans antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-display text-ink;
+  }
+
+  :focus-visible {
+    outline: 2px solid theme("colors.red.DEFAULT");
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  .scrollbar-elegant::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scrollbar-elegant::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-elegant::-webkit-scrollbar-thumb {
+    background-color: theme("colors.line");
+    border-radius: 9999px;
+  }
+  .scrollbar-elegant::-webkit-scrollbar-thumb:hover {
+    background-color: theme("colors.ink.soft");
+  }
+
+  .glass {
+    background: rgba(251, 247, 242, 0.82);
+    backdrop-filter: saturate(160%) blur(14px);
+    -webkit-backdrop-filter: saturate(160%) blur(14px);
+    transform: translateZ(0);
+    will-change: backdrop-filter;
+  }
+  /* Cursor-following spotlight glow, ported 1:1 from the LocalButcher site */
+  .spotlight {
+    position: relative;
+  }
+  .spotlight::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.35s theme("transitionTimingFunction.premium");
+    background: radial-gradient(
+      260px circle at var(--mx, 50%) var(--my, 50%),
+      rgba(192, 57, 43, 0.14),
+      transparent 60%
+    );
+  }
+  .spotlight:hover::after {
+    opacity: 1;
+  }
+
+  /* Glossy sheen sweep — used on the primary send/CTA button */
+  .sheen {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .sheen::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -130%;
+    width: 55%;
+    height: 100%;
+    background: linear-gradient(120deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+    transform: skewX(-22deg);
+    transition: left 0.65s theme("transitionTimingFunction.premium");
+    z-index: 1;
+  }
+  .sheen:hover::after {
+    left: 150%;
+  }
+
+  /* Gradient text, exactly matching the LocalButcher site's .grad-text */
+  .grad-text {
+    background: theme("backgroundImage.grad-text");
+    background-size: 220% auto;
+    background-position: 0% center;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: gradShimmer 7s linear infinite;
+  }
+  @keyframes gradShimmer {
+    to {
+      background-position: 220% center;
+    }
+  }
+
+  /* Load-in reveal — the exact fade-up used on localbutcher.com's hero */
+  .reveal {
+    opacity: 0;
+    transform: translateY(34px);
+    transition: opacity 0.8s theme("transitionTimingFunction.premium"),
+      transform 0.8s theme("transitionTimingFunction.premium");
+  }
+  .reveal.in {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@layer components {
+  /* Ambient animated background — red/gold glows + fine grain, exactly
+     matching the LocalButcher marketing site's .bg-fx treatment. */
+  .bg-fx {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .bg-fx__glow {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(90px);
+    opacity: 0.5;
+    will-change: transform;
+  }
+  .bg-fx__glow--red {
+    width: 50vw;
+    height: 50vw;
+    background: radial-gradient(circle, rgba(192, 57, 43, 0.5), transparent 70%);
+    top: -12vw;
+    right: -10vw;
+    animation: drift1 22s cubic-bezier(0.22, 1, 0.36, 1) infinite alternate;
+  }
+  .bg-fx__glow--brown {
+    width: 46vw;
+    height: 46vw;
+    background: radial-gradient(circle, rgba(202, 164, 58, 0.32), transparent 70%);
+    bottom: -14vw;
+    left: -10vw;
+    animation: drift2 26s cubic-bezier(0.22, 1, 0.36, 1) infinite alternate;
+  }
+  .bg-fx__grain {
+    position: absolute;
+    inset: -200%;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+    opacity: 0.04;
+    mix-blend-mode: multiply;
+  }
+
+  .markdown-answer p {
+    @apply mb-3 last:mb-0;
+  }
+  .markdown-answer ul,
+  .markdown-answer ol {
+    @apply mb-3 pl-5;
+  }
+  .markdown-answer ul {
+    @apply list-disc;
+  }
+  .markdown-answer ol {
+    @apply list-decimal;
+  }
+  .markdown-answer li {
+    @apply mb-1;
+  }
+  .markdown-answer strong {
+    @apply font-semibold text-ink;
+  }
+  .markdown-answer a {
+    @apply text-red underline underline-offset-2 hover:text-red-dark;
+  }
+  .markdown-answer table {
+    @apply mb-3 w-full border-collapse;
+  }
+  .markdown-answer th,
+  .markdown-answer td {
+    @apply border border-line px-3 py-1.5 text-left;
+  }
+  .markdown-answer th {
+    @apply font-semibold text-ink;
+  }
+}
