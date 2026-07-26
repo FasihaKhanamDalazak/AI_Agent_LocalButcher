@@ -6,7 +6,6 @@ import logging
 import uuid
 import wave
 
-from deepgram import AsyncDeepgramClient
 from deepgram.agent.v1.types import (
     AgentV1AgentAudioDone,
     AgentV1ConversationText,
@@ -29,19 +28,9 @@ from app.models.conversation import Message
 from app.models.user import User
 from app.services import greeting_service
 from app.services.chat_service import HISTORY_MESSAGE_LIMIT
+from app.services.deepgram_client import get_client  # noqa: F401 - re-exported, telephony_service uses voice_service.get_client()
 
 logger = logging.getLogger(__name__)
-
-_client: AsyncDeepgramClient | None = None
-
-
-def get_client() -> AsyncDeepgramClient:
-    # Shared with app.services.telephony_service (the phone-call agent) —
-    # one lazily-created client per process, same API key.
-    global _client
-    if _client is None:
-        _client = AsyncDeepgramClient(api_key=settings.DEEPGRAM_API_KEY)
-    return _client
 
 
 # Matches useVoiceChat.js's TARGET_SAMPLE_RATE exactly — the browser

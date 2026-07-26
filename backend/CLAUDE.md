@@ -149,17 +149,68 @@ plain column change:
 
 ## LLM layer
 
-**Manual tool-calling loop, not the SDK's automatic function calling** —
-`gemini_client.run_conversation_turn()` intercepts every single tool call
-so it can execute against `current_user`, never blindly. This is
-non-negotiable; don't switch to automatic function calling without
-re-deriving how the security scoping would work.
+**Text chat now runs through Deepgram's Voice Agent API too, not a direct
+Gemini call** — `app/llm/deepgram_chat_client.py.run_conversation_turn()`,
+called by `chat_service.send_message()`, same as the voice channels. The
+original direct path, `gemini_client.run_conversation_turn()`
+(google-genai SDK, `settings.GEMINI_MODEL` alias), is **kept intact but
+unused** — a deliberate rollback path, not dead code to clean up, while
+this replacement is still freshly built. Reason for the switch: text
+chat's own `GEMINI_API_KEY` sits on the free tier's 20 requests/day, easy
+to exhaust; routing through Deepgram's managed Google integration avoids
+that key entirely (per Deepgram's docs, no API key of ours is involved
+for that path).
 
-**Model is configured via `settings.GEMINI_MODEL`, default
-`"gemini-flash-latest"`** — an ALIAS Google maintains, not a pinned
-version. A pinned version (e.g. `gemini-2.5-flash`) WILL eventually
-404 when Google retires it — this already happened once. Don't repin
-unless deliberately freezing behavior for a specific demo.
+**`InjectUserMessage`, not real audio, drives text chat's turns** — a
+Voice Agent message type that skips straight to the "think" (Gemini)
+step from plain text, no speech needed. `AgentV1Settings` still requires
+a valid `audio` field (schema-mandated even though nothing is used), and
+Deepgram still generates real reply audio server-side, which
+`deepgram_chat_client.py` simply never sends anywhere and discards.
+**Non-obvious, discovered only by testing, not documented anywhere**:
+Deepgram still expects to receive *some* audio periodically even on this
+text-only path — a simple no-tool reply completed fine without ever
+sending audio, but a reply requiring a function-call round trip (think →
+call out → wait → think again, taking longer) hit
+`CLIENT_MESSAGE_TIMEOUT` before finishing. `_send_keep_alive_silence`
+streams silent frames in the background for exactly this reason; removing
+it would silently break every tool-using text reply, not just be a minor
+inefficiency.
+
+**A shared `deepgram_client.get_client()` factory exists specifically to
+avoid a circular import** — `voice_service.py` needs
+`chat_service.HISTORY_MESSAGE_LIMIT`, and `deepgram_chat_client.py` feeds
+into `chat_service.py`, so if `deepgram_chat_client.py` got its Deepgram
+client from `voice_service.py` (like it originally did, briefly, before
+this was split out), the import cycle would be
+`chat_service → deepgram_chat_client → voice_service → chat_service`.
+`voice_service.get_client` is still re-exported from there for
+`telephony_service.py`'s existing `voice_service.get_client()` call sites
+— only `deepgram_chat_client.py` needed to stop going through it.
+
+**Model is configured via `settings.VOICE_AGENT_GEMINI_MODEL` for this
+path** (pinned `"gemini-2.5-flash"`, same as the voice channels — see
+"Phone-call layer"), NOT `settings.GEMINI_MODEL`'s
+`"gemini-flash-latest"` alias, because Deepgram's managed Google provider
+rejects that alias. This is a real, accepted regression versus the
+original direct-Gemini path: the alias's whole point was never needing a
+manual repin when Google retires a version (already happened once) —
+that protection is gone for text chat specifically now. `gemini_client.py`
+still uses the alias for its own (currently unused) path.
+
+**Verified end-to-end against the live Deepgram service before trusting
+it, not just code review** — matching the same rigor as the voice channel
+migrations: a simple no-tool reply, a tool-call reply (`get_cart`), a
+multi-turn conversation (confirmed the model correctly recalled an
+earlier turn — history preload works), `[[FOLLOWUPS: ...]]` chip parsing,
+and Hindi/Hinglish (confirmed still works — unlike the voice channels,
+nothing here ever touches spoken audio the customer hears, so Aura's
+Hindi/Telugu gap doesn't apply; multi-language stays a genuine, real
+advantage text chat keeps that the voice channels don't). Persistence
+double-checked directly against the database each time — exactly the
+right message count, no duplicates, matching the multi-fragment-reply
+bug already fixed once for voice (accumulate `ConversationText` fragments
+into one string before returning, don't persist per-fragment).
 
 **Conversation memory is intentionally simple**: only the last 20 text
 messages replay as history — no tool-call replay, no vector store. This

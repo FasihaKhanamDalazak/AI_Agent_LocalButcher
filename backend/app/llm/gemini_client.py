@@ -13,6 +13,13 @@ from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
+# run_conversation_turn below is no longer called anywhere — chat_service
+# now uses deepgram_chat_client.run_conversation_turn instead, specifically
+# to get text chat off this key's tight free-tier quota (20 requests/day,
+# see AssistantUnavailableError). Kept intact, not deleted, as a deliberate
+# rollback path while the Deepgram-backed replacement is still freshly
+# built and not yet proven under real, sustained use — AssistantUnavailableError
+# itself IS still imported and used by the new path (see deepgram_chat_client.py).
 _client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 # Manual tool calling on purpose, not the SDK's automatic function calling —

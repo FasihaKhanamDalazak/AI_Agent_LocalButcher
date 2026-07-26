@@ -336,9 +336,12 @@ service (separate from "deployed and working," which the above achieves):
 - For chat-layer changes: checking actual server logs for the SQL that
   ran, not just the reply text — an LLM can describe an action without
   having taken it, or vice versa.
-- Gemini's free tier has both a per-minute AND a 20-request/day cap —
-  budget live chat testing accordingly; prefer testing service-layer
-  logic directly when the LLM call itself isn't what's being verified.
+- ~~Gemini's free tier has both a per-minute AND a 20-request/day cap —
+  budget live chat testing accordingly~~ — **less urgent now**: text chat
+  moved to Deepgram's managed Gemini integration (see CLAUDE.md's "LLM
+  layer") specifically to get off that 20/day cap, same as voice/calls
+  already had. Still applies if testing the original direct-Gemini path
+  (`gemini_client.py`), kept intact as an unused rollback option.
 
 ## Change log
 
@@ -414,4 +417,25 @@ this project isn't in version control yet — this is the only record.
     Also corrected a stale doc claim in the process — a real mic button
     already existed in the frontend before this change; "no frontend for
     voice" was already wrong when written.
+11. **Text chat migrated to Deepgram too — all three channels now avoid
+    `GEMINI_API_KEY`'s free-tier quota (20 requests/day)**, not just
+    voice/calls. `app/llm/deepgram_chat_client.py` drives Gemini via
+    Deepgram's Voice Agent `InjectUserMessage` (text straight to the
+    "think" step, no real speech needed) rather than the direct
+    google-genai SDK call `gemini_client.py` made — that original path is
+    kept intact, unused, as a deliberate rollback option. Found a new,
+    undocumented Deepgram behavior in testing: even on this text-only
+    path, a reply requiring a tool-call round trip needs *some* audio
+    streamed periodically or it hits `CLIENT_MESSAGE_TIMEOUT` before
+    finishing — a background silent-audio sender fixes it. Also required
+    extracting a shared `deepgram_client.get_client()` to avoid a genuine
+    circular import (`chat_service → deepgram_chat_client → voice_service
+    → chat_service`). Verified end-to-end: simple replies, tool-calling
+    replies, multi-turn context (confirmed history preload works),
+    follow-up chip parsing, and Hindi/Hinglish (which still works here,
+    unlike the voice channels — nothing in this path touches audio the
+    customer hears, so Aura's Hindi/Telugu TTS gap doesn't apply).
+    Model is pinned to `gemini-2.5-flash` for this path (Deepgram rejects
+    the `gemini-flash-latest` alias) — a real, accepted tradeoff versus
+    the original path's auto-updating alias.
    

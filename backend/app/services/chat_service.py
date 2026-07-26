@@ -1,12 +1,12 @@
 import re
 import uuid
 
-from google.genai import types
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.llm.gemini_client import AssistantUnavailableError, run_conversation_turn  # noqa: F401 - re-exported for callers
+from app.llm.deepgram_chat_client import run_conversation_turn
+from app.llm.gemini_client import AssistantUnavailableError  # noqa: F401 - re-exported for callers
 from app.llm.safety_filter import filter_reply
 from app.models.conversation import Conversation, Message
 from app.models.user import User
@@ -67,20 +67,6 @@ async def _get_or_create_conversation(
     return conversation
 
 
-async def _load_history(db: AsyncSession, conversation_id: uuid.UUID) -> list[types.Content]:
-    result = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conversation_id)
-        .order_by(Message.created_at.desc())
-        .limit(HISTORY_MESSAGE_LIMIT)
-    )
-    rows = list(reversed(result.scalars().all()))
-    return [
-        types.Content(role="model" if m.role == "assistant" else "user", parts=[types.Part(text=m.content)])
-        for m in rows
-    ]
-
-
 def _format_qty(value) -> str:
     return f"{float(value):g}"
 
@@ -106,14 +92,16 @@ async def send_message(
     db: AsyncSession, user: User, conversation_id: uuid.UUID | None, message: str
 ) -> tuple[uuid.UUID, str, list[str]]:
     conversation = await _get_or_create_conversation(db, user.id, conversation_id)
-    history = await _load_history(db, conversation.id)
 
     grounding_note = await _build_cart_grounding_note(db, user.id)
     grounded_message = (
         f"[Automated context, not from the customer — {grounding_note}]\n\n{message}"
     )
 
-    reply_text = await run_conversation_turn(db, user, history, grounded_message)
+    # History is loaded internally by run_conversation_turn now (Deepgram's
+    # own message format, not google.genai's types.Content) — see
+    # deepgram_chat_client.py.
+    reply_text = await run_conversation_turn(db, user, conversation.id, grounded_message)
     reply_text, follow_ups = _extract_follow_ups(reply_text)
     reply_text = filter_reply(reply_text)
 
