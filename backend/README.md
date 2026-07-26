@@ -225,48 +225,89 @@ genuinely out of range).
 
 ## Deployment
 
-**Target: Koyeb's free tier** (a container host, not just a buildpack
-platform) — chosen over Render/Railway/Fly.io specifically because their
-free tiers either don't exist anymore (Railway, Fly.io as of 2026) or
-sleep with a 30-60s cold start (Render) that would make the phone-call
-agent miss Exotel's ~10s inbound-call response window. Koyeb's free nano
-instance sleeps after 1hr idle too, but wakes in ~1-5s — inside that
-budget — and a scheduled keep-alive ping avoids sleeping at all.
+**Target: Oracle Cloud's Always Free tier, home region Hyderabad
+(`ap-hyderabad-1`)** — a persistent Ampere A1 VM (2 OCPU/12GB RAM as of a
+June 2026 allocation reduction, still plenty for this app), not a
+container platform. Went through two other options first, both ruled out
+for concrete reasons worth recording:
+- **Koyeb** was the original plan (simpler than a VM) but its free
+  web-service tier was discontinued/gated sometime after this project's
+  initial research — its dashboard stopped offering a way to create a
+  free service at all.
+- **Render** has a real free tier, but its nearest region to India is
+  Singapore (no Mumbai/India region as of 2026) — ~100-150ms one-way
+  network latency, which compounds badly across the phone-call bridge's
+  real-time audio relay (Exotel ↔ backend ↔ Deepgram, every leg latency-
+  sensitive). A persistent VM has none of Render's 30-60s cold-start risk
+  either way, but the region latency was the deciding factor here.
+
+Oracle actually operates real data centers in Hyderabad and Mumbai
+(`ap-hyderabad-1`/`ap-mumbai-1`) — picking Hyderabad as the free-tier
+home region (a **one-time, permanent choice at account creation**) puts
+this backend in the same city Local Butcher operates in, about as close
+to zero added network latency as is achievable. Tradeoffs versus a PaaS
+free tier: requires a credit/debit card at signup (not charged unless
+explicitly upgraded), the free Ampere A1 shape is known to occasionally
+hit regional capacity limits when provisioning (may need a retry), and
+there's more manual setup (a real VM, not "git push, done").
 
 **`Dockerfile`** at the repo root — multi-layer (deps from `uv.lock`
 installed before app code copied in, so code-only changes don't
-invalidate the slow dependency-install layer). Build-verified locally
-(`docker build .` succeeds cleanly on this Linux base image) — this is
-exactly where the pyttsx3-is-Windows-only issue would have surfaced, and
-didn't, because voice_service.py no longer depends on it (see "Voice
-layer" in CLAUDE.md). Migrations are deliberately NOT run automatically
-on container start — Supabase already has the schema applied; run
+invalidate the slow dependency-install layer). Build-verified locally for
+**both** `linux/amd64` and `linux/arm64` (Oracle's free Ampere shape is
+ARM) via `docker buildx build --platform linux/arm64` — every dependency
+has aarch64 wheels, nothing broke. This is also exactly where the
+pyttsx3-is-Windows-only issue would have surfaced, and didn't, because
+`voice_service.py` no longer depends on it (see "Voice layer" in
+CLAUDE.md). Migrations are deliberately NOT run automatically on
+container start — Supabase already has the schema applied; run
 `uv run alembic upgrade head` manually if a migration is genuinely needed
 before a deploy.
 
-**Steps** (all dashboard/account actions, not code):
-1. Push this repo to GitHub (Koyeb deploys from a connected repo or a
-   pushed Docker image).
-2. Create a Koyeb account → new Web Service from this repo →
-   Dockerfile-based build.
-3. Set every env var from `.env.example` in Koyeb's dashboard with real
-   production values — **generate a fresh `JWT_SECRET_KEY`, don't reuse
-   the dev one** (any tokens issued under it become invalid the moment
-   this changes, which is expected and fine for a first deploy).
-   `ENVIRONMENT=production`, `DEBUG=false`. `CORS_ORIGINS` needs the
-   deployed frontend's exact URL once that exists (chicken-and-egg with
-   step 5 below — deploy backend first with a placeholder, update once
-   the frontend URL is known, redeploy).
-4. Set up a free external pinger (e.g. cron-job.org, UptimeRobot) hitting
-   `https://<your-app>.koyeb.app/health` every ~50 minutes, so the
-   instance never actually goes idle long enough to sleep.
-5. Deploy the frontend (see `../frontend/README.md`) to Vercel/Netlify/
-   Cloudflare Pages, pointing `VITE_API_URL`/`VITE_WS_URL` at this
-   backend's Koyeb URL.
-6. Update Exotel's Voicebot Applet WSS URL from the ngrok tunnel used for
-   local testing to `wss://<your-app>.koyeb.app/api/v1/calls/stream` —
-   this also means ngrok is no longer needed once this is live, only for
-   local dev/testing going forward.
+**`docker-compose.yml` + `Caddyfile`** — Caddy sits in front of the app
+container as a reverse proxy, handling TLS automatically (a real
+Let's Encrypt cert via a free DDNS hostname — see below — not
+self-signed, which matters because Exotel's WSS endpoint explicitly
+rejects self-signed certs) and transparently proxying WebSocket upgrades
+for both `/api/v1/chat/voice/stream` and `/api/v1/calls/stream` with no
+special config needed. The app container itself is never exposed
+directly (no `ports:` mapping) — only Caddy is reachable from outside the
+VM. **Edit the domain in `Caddyfile` before first run.**
+
+**Steps** (all VM/dashboard/account actions, not code):
+1. Create an Oracle Cloud account (oracle.com/cloud/free), home region
+   **Hyderabad** — this is permanent, double-check before confirming.
+2. Compute → Instances → Create Instance → Ampere A1 Flex shape (Always
+   Free eligible), 2 OCPU / 12GB RAM, Ubuntu image, assign a public IP.
+   If capacity is unavailable, retry (common with this shape) or fall
+   back to `ap-mumbai-1` / a smaller free x86 micro shape.
+3. Open ports 80 and 443 in **both** places Oracle requires it: the VCN's
+   Security List (or a Network Security Group) AND the instance's own
+   `iptables`/`ufw` (Oracle's default images ship with restrictive
+   `iptables` rules even after the VCN-level ports are open — a
+   well-known first-time gotcha).
+4. SSH in, install Docker + the Docker Compose plugin.
+5. Get a free hostname pointing at the VM's public IP — e.g.
+   [duckdns.org](https://www.duckdns.org) — and put it in `Caddyfile`.
+6. Clone this repo, `cd backend`, create `.env` with every variable from
+   `.env.example` filled with real production values — **generate a
+   fresh `JWT_SECRET_KEY`, don't reuse the dev one** (any tokens issued
+   under it become invalid the moment this changes, which is expected
+   and fine for a first deploy). `ENVIRONMENT=production`, `DEBUG=false`.
+   `CORS_ORIGINS` needs the deployed frontend's exact URL once that
+   exists (chicken-and-egg with step 7 below — deploy backend first with
+   a placeholder, update once the frontend URL is known, redeploy).
+7. `docker compose up -d --build`.
+8. Deploy the frontend (see `../frontend/README.md`) to Vercel/Netlify/
+   Cloudflare Pages, pointing `VITE_API_URL`/`VITE_WS_URL` at this VM's
+   DuckDNS hostname.
+9. Update Exotel's Voicebot Applet WSS URL from the ngrok tunnel used for
+   local testing to `wss://<your-duckdns-domain>/api/v1/calls/stream` —
+   ngrok is no longer needed once this is live, only for local
+   dev/testing going forward.
+
+No keep-alive pinger needed here — unlike a PaaS free tier, a persistent
+VM never sleeps in the first place.
 
 ## Production readiness
 
