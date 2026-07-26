@@ -623,6 +623,22 @@ middleware order — re-verify the same way if it changes.
   same `order.eta_start`/`eta_end` via the shared `order_to_read`
   serializer (rule #4 above), so this one fix corrected what all of them
   report — don't let these two numbers become independent again.
+- **A second, separate ETA bug, found right after the one above**: even
+  with `eta_start`/`eta_end` numerically correct, the phone-call agent
+  was reading them as raw UTC datetimes and doing its own timezone
+  conversion in speech — producing nonsense like "9 AM tomorrow" for an
+  order due in 30 minutes the same afternoon. Same root cause pattern as
+  the greeting used to guard against (see "LLM layer" — never trust the
+  model with arithmetic on facts that are already certain): fixed by
+  adding `OrderRead.eta_text` (`app/utils/time_format.py`'s `eta_text()`,
+  the SAME function `greeting_service.py` already used correctly — moved
+  there from a private copy so both share one implementation), a
+  pre-formatted, already-local-time string every channel's system prompt
+  is now explicitly told to read/speak verbatim, never compute from
+  `eta_start`/`eta_end` itself. Verified end-to-end through the real LLM
+  path, not just the field's value: asked a live (Deepgram-backed) text
+  chat turn about a real order's ETA and confirmed the model's spoken
+  reply matched `eta_text` exactly.
 - **No real staff app** — `role = "staff"` is set by direct DB edit only,
   no self-serve path (intentional, avoids a privilege-escalation hole via
   registration), but also means there's no UI for staff yet, just two API

@@ -1,25 +1,17 @@
 import uuid
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.config import settings
 from app.models.conversation import Conversation, Message
 from app.models.order import Order, OrderItem
 from app.models.user import User
+from app.utils.time_format import eta_text as _eta_text_from_dt
 
 # Orders in these states aren't "active" for greeting purposes — nothing
 # left to report on.
 _INACTIVE_STATUS_CODES = {"delivered", "cancelled"}
-
-
-def _format_time(dt: datetime) -> str:
-    local = dt.astimezone(ZoneInfo(settings.DISPLAY_TIMEZONE))
-    # %-I isn't portable (fails on Windows) — strip the leading zero manually instead.
-    return local.strftime("%I:%M %p").lstrip("0")
 
 
 def _format_qty(value: float) -> str:
@@ -27,11 +19,7 @@ def _format_qty(value: float) -> str:
 
 
 def _eta_text(order: Order) -> str:
-    if order.eta_start and order.eta_end:
-        return f"between {_format_time(order.eta_start)} and {_format_time(order.eta_end)}"
-    if order.eta_start:
-        return f"ready by {_format_time(order.eta_start)}"
-    return "not available yet"
+    return _eta_text_from_dt(order.eta_start, order.eta_end)
 
 
 def _item_list_text(order: Order) -> str:

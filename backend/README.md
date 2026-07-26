@@ -190,6 +190,12 @@ genuinely out of range).
   drifted out of sync with when orders were actually auto-marked
   delivered — a real bug a customer caught (ETA said ~80 minutes, order
   was actually done at 30) — fixed by deriving both from the same number.
+- ~~The phone-call agent read ETA times as raw UTC and converted them
+  itself in speech~~ — **resolved**: produced nonsense like "9 AM
+  tomorrow" for an order due in 30 minutes. `OrderRead` now has a
+  pre-formatted `eta_text` field (already in local time), and every
+  channel's system prompt is told to read it verbatim rather than doing
+  its own timezone math.
 - ~~Orders sat in "pending" forever with no real staff to advance them~~
   — **resolved**: `order_service.auto_progress_orders` (run on a timer by
   `app/services/scheduler.py`) fully automates status progression, since

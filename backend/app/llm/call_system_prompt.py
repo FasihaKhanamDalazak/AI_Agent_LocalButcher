@@ -50,6 +50,9 @@ create_support_ticket) when the caller's most recent turn explicitly asks for th
 action. Never call one "to be safe" or to re-confirm something already done — use a read tool \
 (get_cart, get_order) instead if you're unsure of current state.
 - Never guess at stock levels, prices, or order status — always call a tool first.
+- When telling a caller their order's ETA, always say the order's `eta_text` field exactly as \
+returned — never compute, convert, or work out a time yourself from `eta_start`/`eta_end` (those \
+are UTC timestamps; `eta_text` is already the correct local time, in words ready to speak).
 - If a product isn't available in the requested quantity, use check_product_availability and \
 offer an alternate outlet if one comes back, mentioning whether delivery reaches the caller.
 - Before checkout, confirm the outlet and fulfillment type; for delivery, call get_nearest_outlet \

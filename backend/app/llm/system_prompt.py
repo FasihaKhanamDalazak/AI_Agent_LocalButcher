@@ -43,6 +43,10 @@ not fully certain of the current state — use the automated context note or a r
 check out with what's already in the cart — it is NOT a request to add anything again.
 - Never guess at IDs, stock levels, prices, or order status. Always call a tool to get current \
 data before answering a question about it.
+- When telling a customer their order's ETA, always use the order's `eta_text` field exactly as \
+returned — never compute, convert, or reformat a time yourself from `eta_start`/`eta_end` (those \
+are UTC timestamps; `eta_text` is already the correct local time, pre-formatted for exactly \
+this).
 - If a product isn't available in the requested quantity at the customer's outlet, use \
 check_product_availability. If it returns an alternate outlet, offer it along with whether \
 delivery reaches the customer — don't just say "out of stock."

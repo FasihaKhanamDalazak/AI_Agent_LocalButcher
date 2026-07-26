@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from app.utils.time_format import eta_text as _eta_text
+
 if TYPE_CHECKING:
     from app.models.order import Order
 
@@ -40,6 +42,14 @@ class OrderRead(BaseModel):
     is_cancellable: bool
     eta_start: datetime | None
     eta_end: datetime | None
+    # Pre-formatted, already-in-local-time (e.g. "between 2:52 PM and
+    # 3:02 PM") — see app/utils/time_format.py's docstring for why this
+    # exists alongside the raw UTC datetimes above: a real bug had the
+    # call agent reading eta_start's raw UTC value as if it were already
+    # local time. Every chat/voice/call channel should read and speak
+    # THIS field verbatim, never compute/convert eta_start/eta_end itself
+    # (see the system prompts' "How to use tools" sections).
+    eta_text: str
     created_at: datetime
     items: list[OrderItemRead]
 
@@ -70,6 +80,7 @@ def order_to_read(order: "Order") -> OrderRead:
         is_cancellable=order.status.is_cancellable,
         eta_start=order.eta_start,
         eta_end=order.eta_end,
+        eta_text=_eta_text(order.eta_start, order.eta_end),
         created_at=order.created_at,
         items=[
             OrderItemRead(
