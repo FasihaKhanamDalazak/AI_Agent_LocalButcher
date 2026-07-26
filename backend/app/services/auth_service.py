@@ -57,19 +57,38 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> User
     return user
 
 
+# Confirmed directly in production logs: the call agent's verify_phone_number
+# tool call sometimes arrives as spelled-out words — "Nine eight seven six
+# five four three two one zero" — not numerals, consistently (not a one-off
+# STT glitch; same rendering every attempt), despite the tool description
+# saying to pass the number through as heard. Stripping non-digits alone
+# silently produced an empty string, so every verification failed with
+# zero clue why until raw/normalized logging was added.
+_NUMBER_WORDS = {
+    "zero": "0", "oh": "0",
+    "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+    "six": "6", "seven": "7", "eight": "8", "nine": "9",
+}
+_PHONE_TOKEN_RE = re.compile(r"[A-Za-z]+|\d")
+
+
 def _normalize_phone(raw: str) -> str:
     # Stored phones are a plain 10-digit Indian mobile number, no country
     # code (see UserCreate.phone's pattern, and migration
     # e2c525353f62_strip_country_code_from_phone_numbers for why the
     # earlier E.164 convention was dropped — it only ever created a way
-    # for a caller's spoken number to mismatch what's stored, confirmed
-    # directly: verification worked once, then failed on a second real
-    # call with no code change in between, traced to this). Strip
-    # everything but digits, then take the LAST 10 — robust to a caller
-    # saying "+91"/"091" out of habit, or Deepgram transcribing either
-    # into the string, without needing to special-case them: whatever
-    # comes before the actual 10-digit mobile number just falls away.
-    digits = re.sub(r"\D", "", raw)
+    # for a caller's spoken number to mismatch what's stored). Walks every
+    # digit-or-word token in order, converting word-form digits (see
+    # _NUMBER_WORDS above) to numerals and dropping anything else (stray
+    # words like "my"/"number"/"is", punctuation, a spoken "+91"/"091"
+    # country code or trunk prefix) — handles pure numerals, pure words, or
+    # a mix, uniformly. Takes the LAST 10 resulting digits, so whatever
+    # comes before the actual mobile number just falls away regardless of
+    # which form it arrived in.
+    digits = "".join(
+        token if token.isdigit() else _NUMBER_WORDS.get(token.lower(), "")
+        for token in _PHONE_TOKEN_RE.findall(raw)
+    )
     return digits[-10:]
 
 

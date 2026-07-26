@@ -464,4 +464,15 @@ this project isn't in version control yet — this is the only record.
     (`migrations/versions/e2c525353f62_...`); `UserCreate.phone`'s
     pattern and the signup form's placeholder/validation both updated to
     match going forward.
+13. **A second `_normalize_phone` bug, found right after #12 via the same
+    raw/normalized logging** — the call agent's `verify_phone_number`
+    argument sometimes arrives as spelled-out words ("Nine eight seven
+    six five four three two one zero"), not numerals, consistently (not
+    random STT noise — same rendering every attempt). Stripping
+    non-digits from an all-letters string silently produced an empty
+    result, so verification failed with no clue why until it was logged.
+    `_normalize_phone` now converts recognized number words to numerals
+    before taking the last 10 digits, handling numerals, words, or a mix
+    uniformly. Verified against the real database with the exact failing
+    string copied from production logs.
    

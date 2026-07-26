@@ -429,7 +429,25 @@ need to special-case any of them. `migrations/versions/
 e2c525353f62_strip_country_code_from_phone_numbers.py` converted existing
 `+91XXXXXXXXXX` rows; `UserCreate.phone`'s pattern
 (`app/schemas/user.py`) enforces the new plain format at signup going
-forward. Once verified, `telephony_service._dispatch_function` routes every other
+forward.
+
+**A second, separate `_normalize_phone` bug, found right after the
+country-code one, via the exact same raw/normalized logging**: the call
+agent's `verify_phone_number` argument sometimes arrives as spelled-out
+English words — `"Nine eight seven six five four three two one zero"`,
+not numerals — consistently (every attempt, same rendering, not random
+STT noise), despite the tool description saying to pass the number
+through as heard. Stripping non-digit characters against an all-letters
+string just produced an empty result, so every verification failed
+silently until this was logged. `_normalize_phone` now walks every
+digit-or-word token in the string (`_PHONE_TOKEN_RE`), converts
+recognized number words (`_NUMBER_WORDS` — "zero"/"oh" through "nine")
+to numerals, and drops anything else — handles pure numerals, pure
+words, or a mix, uniformly, before taking the last 10 digits as before.
+Verified against the real database with the exact failing string from
+production logs, not just a plausible-looking test case.
+
+Once verified, `telephony_service._dispatch_function` routes every other
 call through the *exact same* `app/llm/tool_executor.execute_tool()` every
 other channel uses — never a separate/parallel execution path — so the
 core security guarantee in this file's rule #1 (`user_id` never trusted
