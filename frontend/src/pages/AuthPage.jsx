@@ -96,10 +96,10 @@ function AuthPage() {
               type="tel"
               value={form.phone}
               onChange={update("phone")}
-              placeholder="+91 98765 43210"
+              placeholder="9876543210"
               required
-              pattern="^\+[1-9]\d{7,14}$"
-              title="Include your country code, e.g. +91 98765 43210"
+              pattern="^[6-9]\d{9}$"
+              title="10-digit Indian mobile number, no spaces, no country code, e.g. 9876543210"
               autoComplete="tel"
             />
           )}

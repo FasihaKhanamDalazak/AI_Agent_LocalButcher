@@ -438,4 +438,19 @@ this project isn't in version control yet — this is the only record.
     Model is pinned to `gemini-2.5-flash` for this path (Deepgram rejects
     the `gemini-flash-latest` alias) — a real, accepted tradeoff versus
     the original path's auto-updating alias.
+12. **Dropped E.164 phone storage for a plain 10-digit number, no country
+    code** — a real bug in production, not a theoretical cleanup: phone
+    verification over a real deployed call worked once, then failed on
+    the next attempt with no code change in between, traced to the stored
+    `+91...` value and a caller-stated number disagreeing on whether a
+    country code was present. Since this project serves only the Indian
+    market, the country code added a mismatch surface for zero benefit —
+    removed it instead of patching around it.
+    `auth_service._normalize_phone` now just takes the last 10 digits of
+    whatever it's given, correctly isolating the mobile number regardless
+    of whether a country code/trunk prefix was present or not. Migrated
+    existing `+91XXXXXXXXXX` rows to the plain format
+    (`migrations/versions/e2c525353f62_...`); `UserCreate.phone`'s
+    pattern and the signup form's placeholder/validation both updated to
+    match going forward.
    

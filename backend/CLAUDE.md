@@ -414,9 +414,22 @@ like Twilio. Separately, the *caller* is authenticated mid-call: every
 function in `call_tool_schemas.py` except `search_knowledge_base` requires
 a verified phone number first. `verify_phone_number` — a call-channel-only
 tool the text/browser-voice agent never sees — takes what the caller says
-out loud and checks it via `auth_service.get_user_by_phone()` (which
-normalizes loosely-formatted spoken numbers into the stored E.164 shape).
-Once verified, `telephony_service._dispatch_function` routes every other
+out loud and checks it via `auth_service.get_user_by_phone()`, which
+normalizes loosely-formatted spoken numbers (`_normalize_phone`) into a
+plain 10-digit number, no country code — **not E.164, deliberately, after
+E.164 turned out to be a real bug**: verification worked on one real call,
+then failed on the next with no code change in between, traced to the
+stored `+91...` value and a caller-stated number disagreeing on whether a
+country code was present. Since this project serves only the Indian
+market (see "Tech stack" above), a country code added a mismatch surface
+for zero actual benefit — `_normalize_phone` now just strips everything
+but digits and takes the **last 10**, which correctly isolates the mobile
+number regardless of whether "+91", "091", or nothing came before it, no
+need to special-case any of them. `migrations/versions/
+e2c525353f62_strip_country_code_from_phone_numbers.py` converted existing
+`+91XXXXXXXXXX` rows; `UserCreate.phone`'s pattern
+(`app/schemas/user.py`) enforces the new plain format at signup going
+forward. Once verified, `telephony_service._dispatch_function` routes every other
 call through the *exact same* `app/llm/tool_executor.execute_tool()` every
 other channel uses — never a separate/parallel execution path — so the
 core security guarantee in this file's rule #1 (`user_id` never trusted

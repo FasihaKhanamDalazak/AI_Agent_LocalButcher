@@ -58,20 +58,19 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> User
 
 
 def _normalize_phone(raw: str) -> str:
-    # Stored phones are strict E.164 (see UserCreate.phone's pattern,
-    # "+<country><number>"), but a phone number the call agent hears is
-    # spoken and Deepgram-transcribed — never assume it already looks like
-    # that. Strip everything but digits, then assume a bare 10-digit number
-    # is a local Indian mobile number missing its country code (the only
-    # market this project currently serves — see backend CLAUDE.md).
+    # Stored phones are a plain 10-digit Indian mobile number, no country
+    # code (see UserCreate.phone's pattern, and migration
+    # e2c525353f62_strip_country_code_from_phone_numbers for why the
+    # earlier E.164 convention was dropped — it only ever created a way
+    # for a caller's spoken number to mismatch what's stored, confirmed
+    # directly: verification worked once, then failed on a second real
+    # call with no code change in between, traced to this). Strip
+    # everything but digits, then take the LAST 10 — robust to a caller
+    # saying "+91"/"091" out of habit, or Deepgram transcribing either
+    # into the string, without needing to special-case them: whatever
+    # comes before the actual 10-digit mobile number just falls away.
     digits = re.sub(r"\D", "", raw)
-    if len(digits) == 10:
-        digits = "91" + digits
-    elif len(digits) == 11 and digits.startswith("0"):
-        # Trunk-prefix habit ("0" before a 10-digit mobile number), common
-        # when a number is read out loud rather than typed.
-        digits = "91" + digits[1:]
-    return f"+{digits}"
+    return digits[-10:]
 
 
 async def get_user_by_phone(db: AsyncSession, phone: str) -> User | None:
