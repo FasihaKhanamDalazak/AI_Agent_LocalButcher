@@ -18,6 +18,7 @@ from deepgram.agent.v1.types import (
     AgentV1ConversationText,
     AgentV1Error,
     AgentV1FunctionCallRequest,
+    AgentV1InjectAgentMessage,
     AgentV1SendFunctionCallResponse,
     AgentV1Settings,
     AgentV1SettingsAgent,
@@ -25,6 +26,15 @@ from deepgram.agent.v1.types import (
 )
 
 logger = logging.getLogger(__name__)
+
+# A tool call (DB query + the round trip through Deepgram's pipeline) can
+# take a few real seconds — confirmed directly on a live call. Without
+# this, the caller hears dead air the whole time, which reads as "the call
+# dropped" over the phone (no visual "Thinking…" indicator exists here the
+# way the browser voice UI has). Sent via InjectAgentMessage right when a
+# FunctionCallRequest arrives, behavior="queue" so it never interrupts
+# speech already in flight, just plays next.
+_FILLER_PHRASE = "One moment, let me check that for you."
 
 GREETING_TEXT = (
     "Thanks for calling Local Butcher! I can answer general questions right away — for your cart, "
@@ -208,6 +218,15 @@ async def _relay_deepgram_to_exotel(
             continue
 
         if isinstance(msg, AgentV1FunctionCallRequest):
+            # Said once per batch, not per function — a tool round trip
+            # (DB query + Deepgram's own pipeline) takes a few real
+            # seconds, confirmed on a live call; without this the caller
+            # hears dead air the whole time, which reads as a dropped
+            # call over the phone (no visual "Thinking…" indicator exists
+            # here the way the browser voice UI has).
+            await dg_socket.send_inject_agent_message(
+                AgentV1InjectAgentMessage(message=_FILLER_PHRASE, behavior="queue")
+            )
             for call in msg.functions:
                 try:
                     args = json.loads(call.arguments) if call.arguments else {}
@@ -222,6 +241,20 @@ async def _relay_deepgram_to_exotel(
                 await dg_socket.send_function_call_response(
                     AgentV1SendFunctionCallResponse(id=call.id, name=call.name, content=json.dumps(result))
                 )
+                # Guaranteed, not left to the model's own "think" step —
+                # reported separately as sometimes going fully silent
+                # right after verification instead of confirming it.
+                # This ensures the caller always hears SOMETHING at this
+                # specific high-value moment, regardless of what the
+                # model decides to do next (e.g. chaining straight into
+                # another tool call with no spoken acknowledgment first).
+                if call.name == "verify_phone_number" and result.get("verified"):
+                    await dg_socket.send_inject_agent_message(
+                        AgentV1InjectAgentMessage(
+                            message=f"Thanks, {result.get('name', 'there')}, you're verified!",
+                            behavior="queue",
+                        )
+                    )
             continue
 
         if isinstance(msg, AgentV1ConversationText):

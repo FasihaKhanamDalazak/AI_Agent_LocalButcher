@@ -475,4 +475,14 @@ this project isn't in version control yet — this is the only record.
     before taking the last 10 digits, handling numerals, words, or a mix
     uniformly. Verified against the real database with the exact failing
     string copied from production logs.
+14. **Fixed dead air on the phone-call agent during tool calls** — a real
+    caller-reported issue: a tool round trip takes a few real seconds,
+    and with no audio the whole time, a phone call reads as dropped
+    (browser voice has a visual "Thinking…" indicator for the same gap;
+    a phone line has no visual equivalent). Every tool call now gets a
+    spoken filler ("One moment, let me check that for you.") via
+    Deepgram's `InjectAgentMessage`, and successful phone verification
+    specifically gets a guaranteed spoken confirmation — not left to the
+    model to remember, after a separate report of the call sometimes
+    going silent right after verifying instead of confirming it.
    

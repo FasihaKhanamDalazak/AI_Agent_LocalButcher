@@ -459,6 +459,22 @@ network-verified `from` field, but it's unused; the caller states their
 own number instead. Simpler to build and what was actually asked for; see
 README's "Known placeholders" if this needs hardening later.
 
+**Dead air during tool calls — reported directly by a real caller, fixed
+with `AgentV1InjectAgentMessage`.** A tool round trip (DB query + Deepgram's
+own pipeline) takes a few real seconds; without any audio during that
+gap, a phone call reads as dropped (unlike browser voice, which has a
+visual "Thinking…" indicator — see "Voice layer" — there's no visual
+equivalent over a phone line). Every `FunctionCallRequest` batch now gets
+one spoken filler (`_FILLER_PHRASE`, `behavior="queue"` so it never
+interrupts speech already in flight, just plays next) before dispatching.
+`verify_phone_number` succeeding specifically ALSO gets a guaranteed
+spoken confirmation injected directly — not left to the model's own
+"think" step to remember, after a real report of the call sometimes
+going fully silent right after verification instead of confirming it.
+Both mechanisms verified directly against the live Deepgram service
+(not just code review): `send_inject_agent_message` correctly produces a
+`ConversationText` event followed by real audio bytes, no errors.
+
 **Tool declarations are converted once, shared by all three channels, not
 duplicated** — `tool_schemas.py` itself now builds and exports
 `PLAIN_JSON_TOOL_DECLARATIONS`, Deepgram's plain-JSON-schema function
