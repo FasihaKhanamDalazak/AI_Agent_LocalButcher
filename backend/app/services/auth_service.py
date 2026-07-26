@@ -1,3 +1,4 @@
+import logging
 import re
 
 from sqlalchemy import select
@@ -6,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import hash_password, verify_password
 from app.models.user import User
 from app.schemas.user import UserCreate
+
+logger = logging.getLogger(__name__)
 
 
 class EmailAlreadyRegisteredError(Exception):
@@ -80,5 +83,19 @@ async def get_user_by_phone(db: AsyncSession, phone: str) -> User | None:
     authentication step for that channel, not a lookup scoped to an
     already-known user.
     """
-    result = await db.execute(select(User).where(User.phone == _normalize_phone(phone)))
-    return result.scalar_one_or_none()
+    normalized = _normalize_phone(phone)
+    result = await db.execute(select(User).where(User.phone == normalized))
+    user = result.scalar_one_or_none()
+    # Logged deliberately — a phone number isn't a secret the way a
+    # password is (we already log it elsewhere, e.g. the call `start`
+    # event's `from` field), and this is the only way to actually see what
+    # the model passed through when verification unexpectedly fails, since
+    # there was previously zero visibility into the raw vs. normalized
+    # value at the one place they can diverge from what was intended.
+    logger.info(
+        "get_user_by_phone: raw=%r normalized=%r matched=%s",
+        phone,
+        normalized,
+        user is not None,
+    )
+    return user
