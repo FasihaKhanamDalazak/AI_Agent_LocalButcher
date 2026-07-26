@@ -242,3 +242,45 @@ TOOL_DECLARATIONS = [
 ]
 
 TOOLS = types.Tool(function_declarations=TOOL_DECLARATIONS)
+
+
+# Plain JSON-schema versions of TOOL_DECLARATIONS above, for Deepgram Voice
+# Agent channels (browser voice, phone calls — see app/services/
+# voice_service.py and telephony_service.py) which expect
+# {"name", "description", "parameters"} dicts, not google.genai's typed
+# FunctionDeclaration/Schema objects Gemini's own SDK uses for text chat.
+# Converted here, once, rather than hand-duplicated per channel, so every
+# channel's tool definitions can never silently drift apart (same "shared
+# serializer, not duplicated formatting" principle as order_to_read/
+# cart_item_to_detailed — see backend CLAUDE.md). Actual dispatch for every
+# one of these still goes through the same app.llm.tool_executor regardless
+# of channel; this only reshapes the *declarations* the model sees.
+
+_PLAIN_TYPE_MAP = {
+    types.Type.STRING: "string",
+    types.Type.NUMBER: "number",
+    types.Type.BOOLEAN: "boolean",
+    types.Type.OBJECT: "object",
+}
+
+
+def _convert_schema_to_plain_json(schema: types.Schema) -> dict:
+    result: dict = {"type": _PLAIN_TYPE_MAP[schema.type]}
+    if schema.description:
+        result["description"] = schema.description
+    if schema.enum:
+        result["enum"] = list(schema.enum)
+    if schema.type == types.Type.OBJECT:
+        result["properties"] = {
+            name: _convert_schema_to_plain_json(prop) for name, prop in (schema.properties or {}).items()
+        }
+        if schema.required:
+            result["required"] = list(schema.required)
+    return result
+
+
+def _convert_declaration_to_plain_json(decl: types.FunctionDeclaration) -> dict:
+    return {"name": decl.name, "description": decl.description, "parameters": _convert_schema_to_plain_json(decl.parameters)}
+
+
+PLAIN_JSON_TOOL_DECLARATIONS = [_convert_declaration_to_plain_json(decl) for decl in TOOL_DECLARATIONS]

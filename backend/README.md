@@ -81,17 +81,20 @@ lat/lng). It works immediately for pickup; delivery-range checks
 (`get_nearest_outlet`, `checkout`) give a clear "location not known yet"
 message rather than silently skipping validation or guessing.
 
-**Real-time voice conversation** — the same agent, spoken. `WS
-/api/v1/chat/voice/stream` streams raw microphone audio to Deepgram for
-live transcription (no file upload, no request/response turns); once
-Deepgram detects the customer finished a sentence, that text runs
-through the *exact same* `chat_service.send_message()` used by text
-chat — same tools, same security, same grounding notes — and the reply
-comes back as both text and Deepgram-Aura-synthesized speech, all
-over the same socket. There's no frontend for this yet (deliberately —
-see "Known placeholders"); it's a backend/agent capability a future UI
-will connect to, verified so far with a script that streams synthesized
-audio in place of a live microphone.
+**Real-time voice conversation** — the same agent, spoken, with a real
+mic button in the app (`ChatInput.jsx`, `useVoiceChat.js`) that both
+speaks the reply and shows it as text on screen. `WS
+/api/v1/chat/voice/stream` bridges mic audio to Deepgram's Voice Agent
+API (STT+Gemini+TTS together, the same product the phone-call agent
+uses — see backend CLAUDE.md's "Voice layer") rather than running
+STT → chat_service → TTS as three separate steps: real Gemini quota
+pressure and response latency on the direct-call path were the reason
+for the switch. Every tool is available immediately (the browser
+customer is already logged in, unlike a phone caller), and switching
+from typing to talking mid-conversation carries the conversation history
+over rather than starting fresh. English-only, same underlying reason as
+the phone channel (Aura has no Hindi/Telugu voice) — text chat keeps
+full multi-language support unaffected.
 
 **Phone-call agent** — real inbound phone calls, via Exotel's
 Voicebot/AgentStream applet connecting to `WS /api/v1/calls/stream`. Unlike
@@ -201,13 +204,20 @@ genuinely out of range).
 - **No promotions/offers table.**
 - **Product catalog is placeholder data**, not the founder's real
   catalog (see "Current data" above).
-- **No frontend for voice yet** — `/api/v1/chat/voice/stream` is a real,
-  working backend capability, but nothing captures a live microphone and
-  connects to it. Verified with a script, not a browser.
+- ~~No frontend for voice yet~~ — **this was already stale when it was
+  written**: a real mic button (`ChatInput.jsx`/`useVoiceChat.js`) exists
+  and works. Caught and corrected only when directly asked about it —
+  worth remembering this doc can drift from the actual frontend, not just
+  the backend.
 - ~~TTS is local/robotic (pyttsx3)~~ — **resolved**: switched to Deepgram
   Aura (same voice as the phone-call agent) once pyttsx3's Windows-only
   SAPI5 dependency turned out to be incompatible with the Linux deploy
   target.
+- **Browser voice loses live word-by-word captions while speaking** —
+  Deepgram's Voice Agent protocol has no interim/partial-transcript event
+  (unlike the old raw Listen API this replaced), so the mic button now
+  just shows "Listening…" until the full transcript arrives at once,
+  instead of captions appearing as the customer talks.
 - **One failed voice turn ends the call** — if the chat pipeline errors
   mid-conversation (e.g. an LLM quota hit), the current voice socket
   closes rather than recovering and waiting for the next utterance.
@@ -386,4 +396,22 @@ this project isn't in version control yet — this is the only record.
    (Aura has no Hindi voice). Basic Auth on the handshake, since Exotel
    has no HMAC request signing. See "Known placeholders" for what's still
    untested against a real call.
+10. **Browser voice switched to the phone-call agent's architecture** —
+    `WS /api/v1/chat/voice/stream` now bridges to Deepgram's Voice Agent
+    API too, replacing the separate STT→chat_service→TTS pipeline entry
+    #8 above describes (that pipeline is gone, not just deprioritized;
+    entry #8 is left as historical record of what was true when written).
+    Real Gemini quota pressure and response latency on the direct-call
+    path were the reasons. Unlike phone calls, the browser customer is
+    already authenticated, so there's no verification gate — every tool
+    is available immediately, and prior conversation history is preloaded
+    when continuing a conversation started via text chat. Found and fixed
+    two real bugs only visible by testing against the live Deepgram
+    service: multi-fragment assistant replies were overwriting instead of
+    accumulating (dropping text that was still audibly spoken), and the
+    static greeting was getting duplicated (Deepgram fires a real
+    `ConversationText` event for it too, contrary to what was assumed).
+    Also corrected a stale doc claim in the process — a real mic button
+    already existed in the frontend before this change; "no frontend for
+    voice" was already wrong when written.
    

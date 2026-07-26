@@ -231,71 +231,128 @@ anywhere in the schema — this is a pure display setting. Change it in
 
 ## Voice layer
 
-**`WS /api/v1/chat/voice/stream`** — real-time voice, no file upload.
-The client streams raw linear16 PCM audio (16kHz, mono — see
-`voice_service.open_transcription_stream`) continuously; Deepgram
-transcribes it live and sets `speech_final=True` on the Results message
-when it detects the customer actually finished a sentence (its own
-endpointing, not manual silence-detection on our side). That final text
-is handed to `chat_service.send_message()` completely unchanged — same
-tools, same grounding notes, same security scoping. The reply comes back
-over the same socket as both text and Deepgram-Aura-synthesized audio.
+**`WS /api/v1/chat/voice/stream`** — real-time browser voice, no file
+upload. Has a real frontend (`frontend/src/components/ChatInput/
+ChatInput.jsx`'s mic button + `hooks/useVoiceChat.js`) — an earlier
+version of this doc claimed otherwise; that was stale, not current fact,
+verified directly against the frontend code before trusting it again.
 
-**First WebSocket route in this project** — everything else is plain
-REST. WebSocket auth can't reuse `get_current_user` directly (browsers
-can't set an `Authorization` header on a WS handshake), so the JWT comes
-in as a query param (`?token=...`) instead, resolved through
-`get_user_from_token` in `app/api/deps.py` — extracted specifically so
-REST and WebSocket auth share one JWT-to-User implementation rather than
-duplicating the decode logic.
+**Architecture changed from "STT → chat_service → TTS as three separate
+steps" to bridging Deepgram's Voice Agent API** (`voice_service.
+bridge_browser_voice`) — the same STT+Gemini+TTS-in-one-session product
+`telephony_service.py` uses for phone calls, not a coincidence: real
+Gemini quota pressure and response latency on the old direct-call path
+were the reasons for the switch, discovered in production use, not
+theoretical. `app/api/v1/endpoints/voice.py` is now a thin endpoint
+(auth, rate limit, accept, delegate, error redaction) matching
+`calls.py`'s pattern — all the actual bridging logic lives in the service.
 
-**TTS is Deepgram's `speak.v1.audio.generate` REST call** (Aura,
-`voice_service.text_to_speech`) — a one-shot request/response synthesis,
-not the streaming Voice Agent the phone-call layer uses (see below), since
-this is a single utterance per turn, not a live bidirectional session.
-`encoding="linear16"` must be passed explicitly alongside
-`container="wav"` — Deepgram's API defaults to `encoding="mp3"`, which
-rejects any `container` value at all, discovered by hitting that exact
-400 error once. **Was pyttsx3 (local, free, wrapped Windows SAPI5 via
-COM) until the deploy target turned out to be Linux** — pyttsx3 doesn't
-run there at all. Swapped to Aura specifically because
-`telephony_service.py` had already proven Deepgram TTS out for the phone
-channel; reuses the same `VOICE_AGENT_TTS_VOICE` setting, one less voice
-choice/TTS system to maintain across the two voice channels.
+**Unlike the phone channel, the browser customer is ALREADY authenticated
+(JWT) before the bridge ever starts** — no verification gate, every tool
+available immediately via `PLAIN_JSON_TOOL_DECLARATIONS` (the same
+converted-once declarations `call_tool_schemas.py` also builds on, minus
+`verify_phone_number`, which is call-channel-only). Function-call dispatch
+goes straight to `tool_executor.execute_tool(db, user, ...)` with the real
+`User`, no special-cased tools, no not-verified branch — much simpler than
+`telephony_service._dispatch_function`.
 
-**Deepgram, not local Whisper**, for STT — chosen specifically because
-the ask was genuine real-time transcription (interim results as the
-customer talks), which a batch model like Whisper can't do without
-building manual chunking/VAD, and which the browser's native
-SpeechRecognition could do for free but only inside an actual browser
-page. Free tier, account required (`DEEPGRAM_API_KEY` in `.env`, same
-pattern as `GEMINI_API_KEY`).
+**Prior conversation history is preloaded when continuing an existing
+conversation** (`_load_agent_history`, same `HISTORY_MESSAGE_LIMIT` as
+`chat_service._load_history`, reshaped into Deepgram's plain
+`{"type": "History", "role", "content"}` message format) — a customer can
+switch from typing to talking mid-conversation (`ChatPage.jsx` shares one
+`conversationId` between `useChat` and `useVoiceChat`), and without this
+the Voice Agent would start with no memory of anything said before it.
 
-**No frontend exists for this** — deliberately out of scope so far (see
-`README.md`). Verified with a script that synthesizes a test utterance
-and streams it into the socket in place of a live microphone — a
-legitimate way to test the full loop without needing a browser or real
-mic.
+**The existing frontend WS message contract needed zero changes** —
+`useVoiceChat.js` still expects `interim_transcript`/`final_transcript`/
+`assistant_reply` (with a complete `audio_base64` WAV blob, not a raw
+stream)/`error` messages. Deepgram's Voice Agent doesn't work that way
+natively (raw PCM chunks with no per-utterance framing, no interim/partial
+transcript events at all), so the bridge reshapes it: `_wrap_pcm16_as_wav`
+buffers one turn's raw audio and wraps it into a real WAV file with
+Python's stdlib `wave` module right before sending; there's no
+`interim_transcript` equivalent in this protocol at all (the frontend's
+"Listening…" placeholder covers the gap with no code change, but live
+word-by-word captions while speaking are gone — a real, accepted UX
+regression, not an oversight).
+
+**Two real bugs found only by testing against the live Deepgram service,
+not from docs or code review** — see `_BrowserVoiceState`'s comments for
+the full detail, worth reading before touching this file again:
+1. Deepgram emits **multiple** `ConversationText(assistant)` fragments
+   for what's one continuous spoken turn (e.g. "Your cart is currently
+   empty." then "Is there anything I can help you add?" as two separate
+   events, both audible in a single `AgentAudioDone`-bounded clip) — the
+   first version overwrote instead of accumulating, so the displayed text
+   silently dropped everything but the last fragment while the audio
+   contained all of it. Fixed by concatenating fragments until the next
+   `AgentAudioDone` flush, persisting the combined text as ONE Message row
+   (matching `chat_service`'s one-row-per-turn convention), not one row
+   per fragment.
+2. Deepgram **also** emits a real `ConversationText` event for the
+   configured static greeting (assumed it wouldn't; assumed wrong) — the
+   first version separately preset the pending-text buffer with the
+   greeting itself, which then got that event's text concatenated onto
+   it, **duplicating the entire greeting** in what the customer saw and
+   heard. `greeting_service.start_conversation_with_greeting` already
+   persists the greeting as its own Message row (deliberately, so the
+   model has it as context on the customer's real first turn — see that
+   function's docstring); `has_pending_greeting` tracks "this is the very
+   first non-empty audio flush of a new conversation" to skip a second,
+   duplicate persist, rather than trying to detect the greeting by content.
+
+**English-only** (`_LISTEN_MODEL = "flux-general-en"`, matching the call
+channel) — a deliberate simplification made when this channel was built,
+same underlying reason as the phone channel (Aura has no Hindi/Telugu
+voice); text chat keeps full multi-language support unaffected.
+
+**Sample rate is fixed at 16000 Hz, not configurable like the phone
+channel's `CALL_AUDIO_SAMPLE_RATE`** — it's tightly coupled to
+`useVoiceChat.js`'s hardcoded `TARGET_SAMPLE_RATE`, a frontend contract,
+not an independent deployment knob the way Exotel's negotiated rate is.
+Changing it needs a matching frontend change, not just a backend setting.
+
+**Verified end-to-end against the real Deepgram service and real DB
+state**, not just unit-level: a synthesized test utterance streamed in
+realistic real-time-paced chunks (continuous silence after the utterance,
+matching how a real open mic keeps streaming frames — an earlier test
+version that went fully silent after the utterance triggered Deepgram's
+own `CLIENT_MESSAGE_TIMEOUT`, a test-harness artifact, not a real bug)
+produced a correct personalized greeting, correct transcription, a real
+`get_cart` tool call through the actual `tool_executor`, a correctly
+accumulated combined reply, valid playable WAV audio for both turns, and
+exactly the right Message rows persisted (greeting once, user turn once,
+assistant turn once — no duplicates).
 
 ## Phone-call layer
 
 **`WS /api/v1/calls/stream`** (`app/api/v1/endpoints/calls.py`,
 `app/services/telephony_service.py`) — real inbound phone calls via
-Exotel's Voicebot/AgentStream applet. Architecturally different from the
-Voice layer above, not an extension of it: instead of us running Deepgram
-STT → `chat_service.send_message()` → Aura TTS ourselves, this channel
-hands the whole STT+LLM+TTS loop to Deepgram's **Voice Agent API**
-(`deepgram.agent.v1` — already present in the installed SDK, no new
-dependency). `telephony_service.bridge_call()` is purely a bridge: it
-relays raw audio both directions between Exotel and Deepgram, and executes
-whatever function calls Deepgram's agent decides to make.
+Exotel's Voicebot/AgentStream applet, bridging to Deepgram's **Voice
+Agent API** (`deepgram.agent.v1` — already present in the installed SDK,
+no new dependency) the same way `voice_service.bridge_browser_voice`
+bridges browser voice to it (see "Voice layer" above — this was the
+*first* of the two channels built on Voice Agent, and the pattern proved
+out here is exactly what motivated switching browser voice to match it
+later). `telephony_service.bridge_call()` is purely a bridge: it relays
+raw audio both directions between Exotel and Deepgram, and executes
+whatever function calls Deepgram's agent decides to make. Neither voice
+channel calls `gemini_client.py` — only text chat does; Gemini is
+configured as Voice Agent's "think" provider directly (`type: "google"`)
+for both.
 
-**Why a different pipeline for this channel specifically**: Deepgram's
-Voice Agent speaks the *same* linear16 PCM Exotel uses, end to end, so
-there's zero transcoding — simpler than adapting the browser voice
-endpoint's separate-services pipeline to telephony audio would have been.
-Gemini is configured as the agent's "think" provider directly
-(`type: "google"`), so this channel never calls `gemini_client.py`.
+**What's genuinely different about THIS channel versus browser voice**
+(not the Voice Agent bridging itself, which is now shared): Deepgram's
+Voice Agent speaks the *same* linear16 PCM Exotel uses at whatever sample
+rate a live call reports (`CALL_AUDIO_SAMPLE_RATE`, discovered from a
+real call's logs, not assumed — see below), so there's zero transcoding
+on that leg; browser voice is fixed at 16000 Hz instead, tied to
+`useVoiceChat.js`'s hardcoded rate. Audio framing differs too — Exotel
+needs JSON+base64 media events in exact 320-byte-multiple chunks
+(`_flush_aligned_audio`), browser voice just relays raw WS binary frames
+directly, no alignment constraint. And authentication is the big one,
+covered next.
 
 **Authentication is fundamentally different from every other channel**: a
 phone caller isn't a logged-in app user yet — there's no JWT. Exotel
@@ -320,13 +377,18 @@ network-verified `from` field, but it's unused; the caller states their
 own number instead. Simpler to build and what was actually asked for; see
 README's "Known placeholders" if this needs hardening later.
 
-**Tool declarations are converted, not duplicated** —
-`call_tool_schemas.py` builds Deepgram's plain-JSON-schema function format
-from `tool_schemas.py`'s `TOOL_DECLARATIONS` (the google-genai typed
-objects text chat uses) via `_convert_schema`/`_convert_declaration`, so
-the two channels' tool definitions can't silently drift apart. Only
-`verify_phone_number` is call-only and lives directly in
-`call_tool_schemas.py`.
+**Tool declarations are converted once, shared by all three channels, not
+duplicated** — `tool_schemas.py` itself now builds and exports
+`PLAIN_JSON_TOOL_DECLARATIONS`, Deepgram's plain-JSON-schema function
+format converted from the same `TOOL_DECLARATIONS` (google-genai typed
+objects) text chat uses, via `_convert_schema_to_plain_json`/
+`_convert_declaration_to_plain_json`. `call_tool_schemas.py` just adds
+`VERIFY_PHONE_NUMBER_FUNCTION` on top for `CALL_TOOL_FUNCTIONS`;
+`voice_service.py` (browser voice) uses `PLAIN_JSON_TOOL_DECLARATIONS`
+directly, no verify function at all, since that channel's caller is
+already authenticated. Originally lived only in `call_tool_schemas.py`
+before browser voice needed the same conversion — moved to
+`tool_schemas.py` at that point rather than duplicated a second time.
 
 **Separate system prompt, not a shared/parameterized one**
 (`call_system_prompt.py`, not a variant of `system_prompt.py`) — the two

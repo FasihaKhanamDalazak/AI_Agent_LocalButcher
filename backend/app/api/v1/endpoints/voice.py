@@ -1,6 +1,3 @@
-import asyncio
-import base64
-import json
 import logging
 import uuid
 
@@ -9,7 +6,7 @@ from limits import RateLimitItemPerMinute, storage, strategies
 
 from app.api.deps import get_user_from_token
 from app.db.session import AsyncSessionLocal
-from app.services import chat_service, greeting_service, voice_service
+from app.services import voice_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -26,43 +23,21 @@ _connection_limiter = strategies.FixedWindowRateLimiter(_connection_storage)
 _connection_rate = RateLimitItemPerMinute(5)
 
 
-async def _send_json(websocket: WebSocket, payload: dict) -> None:
-    await websocket.send_text(json.dumps(payload))
-
-
-async def _speak(websocket: WebSocket, conversation_id: uuid.UUID, text: str) -> None:
-    audio = await voice_service.text_to_speech(text)
-    await _send_json(
-        websocket,
-        {
-            "type": "assistant_reply",
-            "text": text,
-            "conversation_id": str(conversation_id),
-            "audio_base64": base64.b64encode(audio).decode("ascii"),
-        },
-    )
-
-
 @router.websocket("/stream")
 async def voice_stream(websocket: WebSocket):
     """
     Real-time voice conversation with the same Local Butcher agent used by
-    the text chat — no file upload, no request/response turns. The client
-    streams raw audio bytes (linear16 PCM, 16kHz, mono — see
-    voice_service.open_transcription_stream) continuously over this socket;
-    Deepgram transcribes it live and tells us when the customer has
-    actually finished a sentence (speech_final), at which point the
-    recognized text is run through chat_service.send_message exactly as a
-    normal text message would be — the chat/tool/security logic is
-    entirely unchanged. The reply comes back as text plus spoken audio,
-    both over this same socket, so a future UI can display and play them
-    together.
-
-    Auth: browsers can't set an Authorization header on a WebSocket
-    handshake, so the JWT is passed as a query param instead
+    text chat. Auth: browsers can't set an Authorization header on a
+    WebSocket handshake, so the JWT is passed as a query param instead
     (?token=...) and resolved through the same get_user_from_token used
     by the header-based REST auth — same security guarantee, different
     transport.
+
+    All the actual bridging (Deepgram's Voice Agent API — STT+Gemini+TTS
+    together, see backend CLAUDE.md's "Voice layer") lives in
+    voice_service.bridge_browser_voice; this endpoint only handles auth,
+    rate limiting, and the accept/error-redaction contract, matching
+    calls.py's thin-endpoint pattern.
     """
     token = websocket.query_params.get("token")
 
@@ -82,80 +57,15 @@ async def voice_stream(websocket: WebSocket):
         conversation_id = uuid.UUID(conversation_id_raw) if conversation_id_raw else None
 
         try:
-            if conversation_id is None:
-                # follow_ups (suggested chips) is a text-chat-only concept — nothing to do with it over voice.
-                conversation_id, greeting_text, _follow_ups = await greeting_service.start_conversation_with_greeting(
-                    db, user
-                )
-                await _speak(websocket, conversation_id, greeting_text)
-
-            async with voice_service.open_transcription_stream() as dg_socket:
-
-                async def forward_audio():
-                    while True:
-                        chunk = await websocket.receive_bytes()
-                        await dg_socket.send_media(chunk)
-
-                async def handle_transcripts():
-                    nonlocal conversation_id
-                    buffer_parts: list[str] = []
-                    async for msg in dg_socket:
-                        if getattr(msg, "type", None) != "Results":
-                            continue
-                        alt = msg.channel.alternatives[0]
-                        transcript = alt.transcript
-                        if not transcript:
-                            continue
-
-                        if msg.is_final:
-                            buffer_parts.append(transcript)
-                            await _send_json(websocket, {"type": "final_transcript", "text": transcript})
-                        else:
-                            await _send_json(websocket, {"type": "interim_transcript", "text": transcript})
-
-                        if msg.speech_final and buffer_parts:
-                            user_text = " ".join(buffer_parts).strip()
-                            buffer_parts.clear()
-                            if user_text:
-                                # Caught here, not left to the outer handler below — a
-                                # quota/upstream hiccup shouldn't drop the whole call,
-                                # just this one turn. The customer can keep talking.
-                                try:
-                                    # follow_ups (chips) is a text-chat-only concept — irrelevant over voice.
-                                    conversation_id, reply_text, _follow_ups = await chat_service.send_message(
-                                        db, user, conversation_id, user_text
-                                    )
-                                except chat_service.AssistantUnavailableError as e:
-                                    await _send_json(websocket, {"type": "error", "message": str(e)})
-                                    continue
-                                await _speak(websocket, conversation_id, reply_text)
-
-                forward_task = asyncio.create_task(forward_audio())
-                transcript_task = asyncio.create_task(handle_transcripts())
-                done, pending = await asyncio.wait(
-                    {forward_task, transcript_task}, return_when=asyncio.FIRST_COMPLETED
-                )
-                for task in pending:
-                    task.cancel()
-                if pending:
-                    await asyncio.gather(*pending, return_exceptions=True)
-                for task in done:
-                    exc = task.exception()
-                    if exc is not None and not isinstance(exc, WebSocketDisconnect):
-                        raise exc
+            await voice_service.bridge_browser_voice(websocket, db, user, conversation_id)
         except WebSocketDisconnect:
             pass
         except Exception:
             # Same redaction contract as main.py's REST-side handler: the
-            # real exception (which can be a raw upstream provider error —
-            # e.g. Gemini quota/billing detail — never something to show a
-            # customer) is always logged server-side, but the client only
-            # ever gets a generic message.
+            # real exception is always logged server-side, but the client
+            # only ever gets a generic message.
             logger.exception("Unhandled exception on voice WS for user %s", user.id)
             try:
-                await _send_json(
-                    websocket, {"type": "error", "message": "Something went wrong on our end. Please try again."}
-                )
                 await websocket.close(code=1011, reason="internal error")
             except Exception:
                 pass
