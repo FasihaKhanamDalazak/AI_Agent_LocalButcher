@@ -183,8 +183,13 @@ genuinely out of range).
 
 ## Known placeholders — be upfront about these
 
-- **ETA calculation** is a prep-time + delivery-window heuristic from
-  `.env` settings, not real logistics data.
+- **ETA calculation** is a heuristic tied to the auto-progression timeline
+  (`AUTO_PROGRESS_DELIVERED_MINUTES`, a 10-minute window centered on it —
+  see `ETA_WINDOW_MINUTES`), not real logistics data. Used to be an
+  *independent* heuristic (prep-time + a separate delivery window) that
+  drifted out of sync with when orders were actually auto-marked
+  delivered — a real bug a customer caught (ETA said ~80 minutes, order
+  was actually done at 30) — fixed by deriving both from the same number.
 - ~~Orders sat in "pending" forever with no real staff to advance them~~
   — **resolved**: `order_service.auto_progress_orders` (run on a timer by
   `app/services/scheduler.py`) fully automates status progression, since

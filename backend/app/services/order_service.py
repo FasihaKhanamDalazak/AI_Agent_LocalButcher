@@ -101,20 +101,27 @@ async def _get_status_by_code_or_none(db: AsyncSession, code: str) -> OrderStatu
 
 def _calculate_eta(fulfillment_type: str) -> tuple[datetime | None, datetime | None]:
     """
-    Placeholder heuristic: prep time + a delivery window, from now. No real
-    logistics/rider-tracking data exists yet — replace this function when
-    it does. Everything downstream reads from order.eta_start/eta_end, so
-    that swap won't touch any calling code.
+    Tied directly to the SAME timeline that actually marks the order
+    delivered (auto_progress_orders, AUTO_PROGRESS_DELIVERED_MINUTES) —
+    not an independent heuristic. Those used to be two unrelated numbers
+    (a 50-80 minute ETA window vs. an order auto-marked delivered at 30
+    minutes) — a real bug a customer caught in production, not a demo
+    nicety: the promise shown on screen and what the system actually did
+    disagreed by roughly an hour. No real logistics/rider-tracking data
+    exists yet — replace this function when it does. Everything downstream
+    reads from order.eta_start/eta_end (including every chat/voice/call
+    channel, via the shared order_to_read serializer — see backend
+    CLAUDE.md rule #4), so fixing the calculation here fixes what every
+    channel reports, with no per-channel change needed.
     """
     now = datetime.now(timezone.utc)
-    prep = timedelta(minutes=settings.ORDER_PREP_MINUTES)
+    delivered_at = timedelta(minutes=settings.AUTO_PROGRESS_DELIVERED_MINUTES)
 
     if fulfillment_type == "pickup":
-        return now + prep, None  # single "ready by" time, no window
+        return now + delivered_at, None  # single "ready by" time, no window
 
-    window_min = timedelta(minutes=settings.DELIVERY_WINDOW_MIN_MINUTES)
-    window_max = timedelta(minutes=settings.DELIVERY_WINDOW_MAX_MINUTES)
-    return now + prep + window_min, now + prep + window_max
+    half_window = timedelta(minutes=settings.ETA_WINDOW_MINUTES / 2)
+    return now + delivered_at - half_window, now + delivered_at + half_window
 
 
 async def _lock_stock_row(db: AsyncSession, outlet_id: uuid.UUID, product_id: uuid.UUID) -> OutletStock | None:

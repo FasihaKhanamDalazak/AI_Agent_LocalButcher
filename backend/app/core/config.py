@@ -39,12 +39,6 @@ class Settings(BaseSettings):
     # for current options.
     GEMINI_MODEL: str = "gemini-flash-latest"
 
-    # Placeholder ETA heuristic — see order_service.checkout(). Tune these
-    # or replace the whole calculation once real logistics data exists.
-    ORDER_PREP_MINUTES: int = 20
-    DELIVERY_WINDOW_MIN_MINUTES: int = 30
-    DELIVERY_WINDOW_MAX_MINUTES: int = 60
-
     # There's no real staff/logistics operation behind this project yet
     # (see order_service.auto_progress_orders) — orders would otherwise
     # sit in "pending" forever with nothing to move them along, which reads
@@ -60,6 +54,17 @@ class Settings(BaseSettings):
     # close to on-time regardless of when it was placed, not just on a
     # fixed wall-clock schedule unrelated to individual orders.
     AUTO_PROGRESS_CHECK_INTERVAL_SECONDS: int = 60
+
+    # order_service._calculate_eta's displayed window width, CENTERED on
+    # AUTO_PROGRESS_DELIVERED_MINUTES above — deliberately the SAME number
+    # driving auto-progression, not a separate heuristic (ORDER_PREP_MINUTES/
+    # DELIVERY_WINDOW_MIN_MINUTES/DELIVERY_WINDOW_MAX_MINUTES used to be
+    # independent settings giving a 50-80 minute ETA while the order was
+    # actually auto-marked delivered at 30 minutes — a real, user-caught
+    # inconsistency, not a demo detail. Removed rather than left to drift
+    # again; keep this tied to AUTO_PROGRESS_DELIVERED_MINUTES if either
+    # ever changes.
+    ETA_WINDOW_MINUTES: int = 10
 
     # Used only to format times for display (e.g. in the greeting). All
     # timestamps are stored in UTC regardless of this setting.

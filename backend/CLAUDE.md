@@ -611,8 +611,18 @@ middleware order — re-verify the same way if it changes.
 
 ## Known placeholders — be upfront about these, don't let them pass as finished
 
-- **ETA calculation** (`order_service._calculate_eta`) is prep-time +
-  delivery-window heuristic from `.env` settings, not real logistics data.
+- **ETA calculation** (`order_service._calculate_eta`) is a heuristic
+  window centered on `AUTO_PROGRESS_DELIVERED_MINUTES` (width
+  `ETA_WINDOW_MINUTES`), not real logistics data — deliberately tied to
+  the SAME number driving `auto_progress_orders`, not an independent
+  heuristic. It used to be independent (separate `ORDER_PREP_MINUTES`/
+  `DELIVERY_WINDOW_MIN_MINUTES`/`DELIVERY_WINDOW_MAX_MINUTES` settings,
+  removed), which drifted into a real, customer-caught bug: the
+  displayed ETA said ~80 minutes while the order was actually
+  auto-marked delivered at 30. Every chat/voice/call channel reads the
+  same `order.eta_start`/`eta_end` via the shared `order_to_read`
+  serializer (rule #4 above), so this one fix corrected what all of them
+  report — don't let these two numbers become independent again.
 - **No real staff app** — `role = "staff"` is set by direct DB edit only,
   no self-serve path (intentional, avoids a privilege-escalation hole via
   registration), but also means there's no UI for staff yet, just two API
