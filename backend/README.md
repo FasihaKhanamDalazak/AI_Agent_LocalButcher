@@ -182,6 +182,20 @@ genuinely out of range).
 
 - **ETA calculation** is a prep-time + delivery-window heuristic from
   `.env` settings, not real logistics data.
+- ~~Orders sat in "pending" forever with no real staff to advance them~~
+  — **resolved**: `order_service.auto_progress_orders` (run on a timer by
+  `app/services/scheduler.py`) fully automates status progression, since
+  this project has no real staff/logistics operation behind it. See
+  backend CLAUDE.md's "Order auto-progression" section for the design.
+  Set `AUTO_PROGRESS_ORDERS=false` to disable.
+- **Support tickets have the same gap, unresolved** —
+  `create_support_ticket` files a ticket with `status="open"`, but nothing
+  anywhere (chat tool, staff endpoint, or otherwise) ever moves it to
+  `in_progress`/`resolved`. Same category of issue as the order-status one
+  above, not yet given the same treatment — flagging it here rather than
+  fixing it silently, since unlike orders there's no obvious universal
+  "resolved after N minutes" rule (a real support issue's actual
+  resolution time is genuinely unknowable, unlike a demo order's delivery).
 - **No self-serve staff app** — `role = "staff"` is a direct DB edit
   only; two staff API endpoints exist with no UI.
 - **No promotions/offers table.**

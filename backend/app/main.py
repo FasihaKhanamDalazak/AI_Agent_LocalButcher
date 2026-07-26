@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
 
@@ -18,8 +19,16 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.rate_limit import limiter
+from app.services import scheduler
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler.start(app)
+    yield
+    await scheduler.stop(app)
 
 
 def create_app() -> FastAPI:
@@ -28,6 +37,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
         docs_url="/docs" if settings.DEBUG else None,
         redoc_url=None,
+        lifespan=lifespan,
     )
 
     app.add_middleware(

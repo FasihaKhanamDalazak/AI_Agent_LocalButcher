@@ -367,6 +367,83 @@ async def set_order_status(db: AsyncSession, order_id: uuid.UUID, status_code: s
     return await get_order_by_id(db, order_id)
 
 
+def _target_auto_status_code(elapsed_minutes: float) -> str:
+    # Ordered oldest-threshold-first so the last matching entry wins —
+    # deliberately NOT "confirmed" until at least 0 minutes have passed
+    # (i.e. immediately), since there's no real staff to confirm an order,
+    # only a demo standing in for one.
+    timeline = [
+        (0, "confirmed"),
+        (settings.AUTO_PROGRESS_PACKED_MINUTES, "packed"),
+        (settings.AUTO_PROGRESS_OUT_FOR_DELIVERY_MINUTES, "out_for_delivery"),
+        (settings.AUTO_PROGRESS_DELIVERED_MINUTES, "delivered"),
+    ]
+    code = timeline[0][1]
+    for threshold_minutes, status_code in timeline:
+        if elapsed_minutes >= threshold_minutes:
+            code = status_code
+    return code
+
+
+async def auto_progress_orders(db: AsyncSession) -> int:
+    """
+    Fully automated order-status progression — see app/services/
+    scheduler.py, which calls this on a timer from app startup. This
+    project has no real staff/logistics operation behind it yet, so
+    without this, every order would just sit in "pending" forever, which
+    reads as broken rather than as an intentional placeholder (same
+    category of issue as the ETA heuristic — see backend CLAUDE.md's
+    "Known placeholders").
+
+    Each active order's target status is derived fresh from elapsed time
+    since it was placed (created_at), not incrementally stepped — so a
+    missed tick (app restart, a slow Render cold start, etc.) self-corrects
+    on the very next run instead of leaving an order stuck partway forever.
+
+    Deliberately monotonic — never regresses a status backward — so a
+    staff member manually advancing an order early via
+    PATCH /staff/orders/{id} (set_order_status) is never undone by the
+    next automatic tick; automation only takes over again once real
+    elapsed time naturally catches up past whatever staff already set.
+    """
+    result = await db.execute(
+        select(Order)
+        .join(OrderStatus, Order.status_id == OrderStatus.id)
+        .where(OrderStatus.code.notin_(["delivered", "cancelled"]))
+        .options(selectinload(Order.status))
+    )
+    orders = result.scalars().all()
+    if not orders:
+        return 0
+
+    all_statuses = {s.code: s for s in (await db.execute(select(OrderStatus))).scalars().all()}
+    now = datetime.now(timezone.utc)
+    updated = 0
+
+    for order in orders:
+        elapsed_minutes = (now - order.created_at).total_seconds() / 60
+        target_status = all_statuses[_target_auto_status_code(elapsed_minutes)]
+        if target_status.sort_order <= order.status.sort_order:
+            continue
+
+        order.status_id = target_status.id
+        order.status = target_status  # see _restore_stock_and_cancel's comment on the same pattern
+        db.add(
+            AuditLog(
+                entity_type="order",
+                entity_id=order.id,
+                action="auto_progressed",
+                actor_user_id=None,  # no human actor — see docstring
+                details={"new_status": target_status.code},
+            )
+        )
+        updated += 1
+
+    if updated:
+        await db.commit()
+    return updated
+
+
 async def update_order_item(
     db: AsyncSession, user_id: uuid.UUID, order_id: uuid.UUID, item_id: uuid.UUID, new_quantity: float
 ) -> Order:

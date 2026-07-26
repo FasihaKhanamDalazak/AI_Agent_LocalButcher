@@ -45,6 +45,22 @@ class Settings(BaseSettings):
     DELIVERY_WINDOW_MIN_MINUTES: int = 30
     DELIVERY_WINDOW_MAX_MINUTES: int = 60
 
+    # There's no real staff/logistics operation behind this project yet
+    # (see order_service.auto_progress_orders) — orders would otherwise
+    # sit in "pending" forever with nothing to move them along, which reads
+    # as broken rather than as an intentional placeholder. Set
+    # AUTO_PROGRESS_ORDERS=false to disable entirely (e.g. once real staff
+    # processing exists) without touching code.
+    AUTO_PROGRESS_ORDERS: bool = True
+    AUTO_PROGRESS_PACKED_MINUTES: int = 10
+    AUTO_PROGRESS_OUT_FOR_DELIVERY_MINUTES: int = 20
+    AUTO_PROGRESS_DELIVERED_MINUTES: int = 30
+    # How often the background check runs — deliberately much shorter than
+    # the thresholds above so each order's own 10/20/30-minute marks land
+    # close to on-time regardless of when it was placed, not just on a
+    # fixed wall-clock schedule unrelated to individual orders.
+    AUTO_PROGRESS_CHECK_INTERVAL_SECONDS: int = 60
+
     # Used only to format times for display (e.g. in the greeting). All
     # timestamps are stored in UTC regardless of this setting.
     DISPLAY_TIMEZONE: str = "Asia/Kolkata"

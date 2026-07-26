@@ -397,6 +397,65 @@ discarded, even though uvicorn's own access/error logs still appeared
 `main.py`, rather than routing around it — this affects every module's
 logging, not just the phone-call layer.
 
+## Order auto-progression
+
+**`order_service.auto_progress_orders`**, run every
+`AUTO_PROGRESS_CHECK_INTERVAL_SECONDS` (default 60s) by
+`app/services/scheduler.py` via a background `asyncio` task started from
+`main.py`'s `lifespan`. This project has no real staff/logistics operation
+behind it — without this, every order would sit in `pending` forever,
+which reads as a broken/unfinished feature to anyone testing the product,
+not as an intentional placeholder. Same underlying motivation as the ETA
+heuristic, just for status instead of a time estimate.
+
+**Status is derived fresh from elapsed time every tick, never
+incrementally stepped.** `_target_auto_status_code(elapsed_minutes)`
+computes what status an order *should* be at purely from
+`now - order.created_at`, using `AUTO_PROGRESS_PACKED_MINUTES` /
+`_OUT_FOR_DELIVERY_MINUTES` / `_DELIVERED_MINUTES` (default 10/20/30) as
+thresholds. A missed tick — the process restarts, Render's free tier
+naps despite the keep-alive pinger, whatever — self-corrects on the very
+next run instead of leaving an order stuck partway forever; there's no
+persisted "next status" state to get out of sync with reality.
+
+**Deliberately monotonic — comparing `OrderStatus.sort_order`, never
+regresses a status backward.** A staff member can still manually advance
+an order early via `PATCH /staff/orders/{id}` → `set_order_status`; the
+next automatic tick computes what elapsed time alone would justify, and
+if that's earlier in the sequence than what staff already set, the tick
+is a no-op for that order rather than undoing the manual override. Proven
+with a real test: staff-set `delivered` on a brand-new order (elapsed
+~0 min, which alone would target `confirmed`) survives an immediate
+automation tick unchanged. Automation only takes over again once real
+elapsed time naturally catches up past wherever staff left it.
+
+**`cancelled` and `delivered` orders are excluded from the query
+entirely** (`OrderStatus.code.notin_(["delivered", "cancelled"])`) — both
+are terminal states this function must never touch, so a customer's
+`cancel_order` action can never be silently overwritten by the next tick.
+
+**A single bad tick must never kill the loop** — `scheduler._run_forever`
+catches and logs any exception from one iteration and keeps going; there's
+no supervisor process that would otherwise restart a crashed background
+task, so an unhandled exception here would silently stop all future
+auto-progression for the rest of the process's life. Verified end-to-end
+against real DB rows (not just unit-level): a real checkout followed by
+one tick correctly moves `pending` → `confirmed`; a backdated 25-minute-
+old order correctly jumps straight to `out_for_delivery` in one tick
+(the self-correction case); the monotonic-no-regression case above.
+
+**`AUTO_PROGRESS_ORDERS=false`** disables the whole thing without a code
+change — flip this if real staff/logistics processing ever exists and
+this becomes actively wrong instead of a helpful stand-in.
+
+**Support tickets have the identical underlying gap, NOT given the same
+treatment** — `create_support_ticket` files with `status="open"` and
+nothing ever advances it (no chat tool, no staff endpoint). Deliberately
+left alone: unlike an order's delivery, a real support issue's actual
+resolution time isn't a knowable constant, so there's no equivalently
+honest "N minutes later" rule to automate. Flagged in README's "Known
+placeholders", not silently fixed with a fake timer.
+
 ## Hardening
 
 **Rate limiting** (`app/core/rate_limit.py`) — `slowapi`, in-memory,
