@@ -1,9 +1,0 @@
-# Replace with your actual DuckDNS (or other free DDNS) hostname before
-# first run — e.g. localbutcher.duckdns.org. Caddy automatically obtains
-# and renews a real Let's Encrypt TLS cert for whatever domain is here, and
-# transparently proxies WebSocket upgrades (both /api/v1/chat/voice/stream
-# and /api/v1/calls/stream) — no special WS config needed, reverse_proxy
-# handles the Upgrade header itself.
-your-domain.duckdns.org {
-    reverse_proxy backend:8000
-}
