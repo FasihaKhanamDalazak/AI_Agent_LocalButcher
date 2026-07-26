@@ -57,8 +57,8 @@ app/
 │                             endpoints and the LLM tool executor
 ├── services/                 ALL business logic lives here, never in
 │   │                         endpoint functions. Endpoints are thin.
-│   └── voice_service.py       Deepgram streaming STT connection + local
-│                               pyttsx3 TTS — see "Voice layer" below
+│   └── voice_service.py       Deepgram streaming STT connection + Aura
+│                               TTS (REST) — see "Voice layer" below
 ├── api/
 │   ├── deps.py               get_current_user, get_current_staff_user,
 │   │                          get_user_from_token (shared by both +
@@ -239,7 +239,7 @@ when it detects the customer actually finished a sentence (its own
 endpointing, not manual silence-detection on our side). That final text
 is handed to `chat_service.send_message()` completely unchanged — same
 tools, same grounding notes, same security scoping. The reply comes back
-over the same socket as both text and pyttsx3-synthesized audio.
+over the same socket as both text and Deepgram-Aura-synthesized audio.
 
 **First WebSocket route in this project** — everything else is plain
 REST. WebSocket auth can't reuse `get_current_user` directly (browsers
@@ -249,26 +249,153 @@ in as a query param (`?token=...`) instead, resolved through
 REST and WebSocket auth share one JWT-to-User implementation rather than
 duplicating the decode logic.
 
-**pyttsx3 gets a fresh engine instance per call**, run via
-`asyncio.to_thread` (`voice_service._synthesize_sync`). It wraps Windows
-SAPI5 via COM, which is thread-affine — reusing one engine instance
-across worker threads is not safe, but a new instance on whichever
-thread runs it is. Don't "optimize" this into a cached/shared engine.
+**TTS is Deepgram's `speak.v1.audio.generate` REST call** (Aura,
+`voice_service.text_to_speech`) — a one-shot request/response synthesis,
+not the streaming Voice Agent the phone-call layer uses (see below), since
+this is a single utterance per turn, not a live bidirectional session.
+`encoding="linear16"` must be passed explicitly alongside
+`container="wav"` — Deepgram's API defaults to `encoding="mp3"`, which
+rejects any `container` value at all, discovered by hitting that exact
+400 error once. **Was pyttsx3 (local, free, wrapped Windows SAPI5 via
+COM) until the deploy target turned out to be Linux** — pyttsx3 doesn't
+run there at all. Swapped to Aura specifically because
+`telephony_service.py` had already proven Deepgram TTS out for the phone
+channel; reuses the same `VOICE_AGENT_TTS_VOICE` setting, one less voice
+choice/TTS system to maintain across the two voice channels.
 
-**Deepgram, not local Whisper** — chosen specifically because the ask
-was genuine real-time transcription (interim results as the customer
-talks), which a batch model like Whisper can't do without building
-manual chunking/VAD, and which the browser's native SpeechRecognition
-could do for free but only inside an actual browser page. Free tier,
-account required (`DEEPGRAM_API_KEY` in `.env`, same pattern as
-`GEMINI_API_KEY`). TTS deliberately stayed local/free (pyttsx3) — that
-tradeoff wasn't reconsidered when the STT side moved to a cloud service.
+**Deepgram, not local Whisper**, for STT — chosen specifically because
+the ask was genuine real-time transcription (interim results as the
+customer talks), which a batch model like Whisper can't do without
+building manual chunking/VAD, and which the browser's native
+SpeechRecognition could do for free but only inside an actual browser
+page. Free tier, account required (`DEEPGRAM_API_KEY` in `.env`, same
+pattern as `GEMINI_API_KEY`).
 
 **No frontend exists for this** — deliberately out of scope so far (see
 `README.md`). Verified with a script that synthesizes a test utterance
-with pyttsx3 and streams it into the socket in place of a live
-microphone — a legitimate way to test the full loop without needing a
-browser or real mic.
+and streams it into the socket in place of a live microphone — a
+legitimate way to test the full loop without needing a browser or real
+mic.
+
+## Phone-call layer
+
+**`WS /api/v1/calls/stream`** (`app/api/v1/endpoints/calls.py`,
+`app/services/telephony_service.py`) — real inbound phone calls via
+Exotel's Voicebot/AgentStream applet. Architecturally different from the
+Voice layer above, not an extension of it: instead of us running Deepgram
+STT → `chat_service.send_message()` → Aura TTS ourselves, this channel
+hands the whole STT+LLM+TTS loop to Deepgram's **Voice Agent API**
+(`deepgram.agent.v1` — already present in the installed SDK, no new
+dependency). `telephony_service.bridge_call()` is purely a bridge: it
+relays raw audio both directions between Exotel and Deepgram, and executes
+whatever function calls Deepgram's agent decides to make.
+
+**Why a different pipeline for this channel specifically**: Deepgram's
+Voice Agent speaks the *same* linear16 PCM Exotel uses, end to end, so
+there's zero transcoding — simpler than adapting the browser voice
+endpoint's separate-services pipeline to telephony audio would have been.
+Gemini is configured as the agent's "think" provider directly
+(`type: "google"`), so this channel never calls `gemini_client.py`.
+
+**Authentication is fundamentally different from every other channel**: a
+phone caller isn't a logged-in app user yet — there's no JWT. Exotel
+itself is Basic-Auth'd on the WS handshake (`EXOTEL_BASIC_AUTH_USERNAME`/
+`PASSWORD`, checked with `hmac.compare_digest`, fails CLOSED if unset —
+see `calls.py._basic_auth_ok`), since Exotel has no HMAC request signing
+like Twilio. Separately, the *caller* is authenticated mid-call: every
+function in `call_tool_schemas.py` except `search_knowledge_base` requires
+a verified phone number first. `verify_phone_number` — a call-channel-only
+tool the text/browser-voice agent never sees — takes what the caller says
+out loud and checks it via `auth_service.get_user_by_phone()` (which
+normalizes loosely-formatted spoken numbers into the stored E.164 shape).
+Once verified, `telephony_service._dispatch_function` routes every other
+call through the *exact same* `app/llm/tool_executor.execute_tool()` every
+other channel uses — never a separate/parallel execution path — so the
+core security guarantee in this file's rule #1 (`user_id` never trusted
+from the model) holds here too: `tool_executor.execute_tool` is never
+called with anything but a real `User` resolved from that phone lookup,
+never from a model-supplied argument. This is deliberately **honor-system,
+not caller-ID verification** — Exotel's `start` event does carry a
+network-verified `from` field, but it's unused; the caller states their
+own number instead. Simpler to build and what was actually asked for; see
+README's "Known placeholders" if this needs hardening later.
+
+**Tool declarations are converted, not duplicated** —
+`call_tool_schemas.py` builds Deepgram's plain-JSON-schema function format
+from `tool_schemas.py`'s `TOOL_DECLARATIONS` (the google-genai typed
+objects text chat uses) via `_convert_schema`/`_convert_declaration`, so
+the two channels' tool definitions can't silently drift apart. Only
+`verify_phone_number` is call-only and lives directly in
+`call_tool_schemas.py`.
+
+**Separate system prompt, not a shared/parameterized one**
+(`call_system_prompt.py`, not a variant of `system_prompt.py`) — the two
+channels differ enough (unauthenticated-until-verified, English-only,
+spoken-not-written output, no `[[FOLLOWUPS]]` chips) that conditionals
+inside one shared string would cost more clarity than the duplication
+saves. Keep shared rules (security, tool-usage judgment) in sync by hand
+across both; channel-specific rules only belong in the one that applies.
+
+**English-only, not multi-language like text chat** — Deepgram's Aura TTS
+voices are English/Spanish only, no Hindi, so even though Flux STT can
+understand spoken Hindi, there'd be no way to answer back in it. Rather
+than build an asymmetric "understands Hindi, always replies in English"
+experience, the call channel stays English end-to-end; multi-language stays
+a text-chat-only feature (see `system_prompt.py`'s "## Language" section).
+
+**Gemini model is pinned** (`VOICE_AGENT_GEMINI_MODEL`, default
+`gemini-2.5-flash`) — Deepgram's managed Google provider rejects the
+`gemini-flash-latest` alias `GEMINI_MODEL` uses elsewhere in this project
+(see "LLM layer" above for why that alias exists); this is a Deepgram
+platform constraint, not a reconsideration of the alias-over-pin decision
+for the rest of the app.
+
+**Conversation persistence starts at verification, not at call start** —
+`Conversation`/`Message` rows (channel="call") only get created once
+`verify_phone_number` resolves a real user (`Conversation.user_id` is
+`NOT NULL`, same as chat/voice); the general-Q&A portion of a call before
+that point is never logged. A known, accepted gap for now, not a bug.
+
+**Verified against real Exotel calls — two real bugs found and fixed this
+way, not from docs alone**:
+1. **Audio chunk misalignment** — Exotel requires media chunk sizes to be
+   exact multiples of 320 bytes; Deepgram's TTS output arrives in
+   arbitrarily-sized byte messages with no such alignment. Sending each one
+   straight through caused audible glitching on a real call.
+   `_flush_aligned_audio()` in `telephony_service.py` buffers and only ever
+   sends whole 320-byte multiples, carrying remainders forward (and
+   zero-padding the trailing remainder at call end so nothing is dropped).
+2. **Sample rate mismatch** — this account's Voicebot Applet config UI has
+   **no sample-rate selector at all** (contrary to
+   developer.exotel.com/docs describing an 8k/16k/24k choice — that may be
+   a higher-tier/enabled-feature thing), so it silently uses 8000 Hz
+   regardless of what's requested. Assuming 16000 Hz (a reasonable docs-
+   based default) produced a deep, slowed-down, "scary robotic" voice —
+   generated audio played back at half its actual rate.
+   `CALL_AUDIO_SAMPLE_RATE` is now 8000, confirmed correct by logging the
+   real `start` event's `media_format.sample_rate` from a live call (see
+   the `logger.info` in `_relay_exotel_to_deepgram`) rather than trusting
+   docs. **If a different Exotel account/plan is ever used, re-verify this
+   value from a live call's logs before assuming 8000 still applies** —
+   don't just trust the dashboard UI or the docs.
+
+**This account's Voicebot Applet also has no Basic Auth field** — same
+"UI doesn't expose what the docs describe" gap as the sample-rate
+selector, likely because Exotel's Stream/Voicebot Applet feature needs
+support to explicitly enable it first (see README). `EXOTEL_REQUIRE_AUTH`
+(default `true`) exists as an explicit, loudly-logged opt-out for this —
+set `false` in `.env` only when the dashboard genuinely has no auth option
+to configure, and flip it back once it does. Never remove the
+`_basic_auth_ok` check itself as a "fix" for this.
+
+**App-wide logging gap found and fixed while debugging this**:
+`app/main.py` had no `logging.basicConfig(...)` call, so Python's root
+logger defaulted to WARNING with no handler — every `logger.info(...)`
+call anywhere in the app (not just telephony_service.py) was silently
+discarded, even though uvicorn's own access/error logs still appeared
+(uvicorn configures its loggers independently). Fixed once, at the top of
+`main.py`, rather than routing around it — this affects every module's
+logging, not just the phone-call layer.
 
 ## Hardening
 

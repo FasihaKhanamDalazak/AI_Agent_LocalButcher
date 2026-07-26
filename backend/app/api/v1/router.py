@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import addresses, auth, cart, chat, orders, outlets, products, staff, support, voice
+from app.api.v1.endpoints import addresses, auth, calls, cart, chat, orders, outlets, products, staff, support, voice
 
 api_router = APIRouter()
 
@@ -14,3 +14,4 @@ api_router.include_router(support.router, prefix="/support-tickets", tags=["supp
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(voice.router, prefix="/chat/voice", tags=["voice"])
 api_router.include_router(staff.router, prefix="/staff", tags=["staff"])
+api_router.include_router(calls.router, prefix="/calls", tags=["calls"])

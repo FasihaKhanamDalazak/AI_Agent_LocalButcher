@@ -87,11 +87,31 @@ live transcription (no file upload, no request/response turns); once
 Deepgram detects the customer finished a sentence, that text runs
 through the *exact same* `chat_service.send_message()` used by text
 chat — same tools, same security, same grounding notes — and the reply
-comes back as both text and locally-synthesized speech (pyttsx3), all
+comes back as both text and Deepgram-Aura-synthesized speech, all
 over the same socket. There's no frontend for this yet (deliberately —
 see "Known placeholders"); it's a backend/agent capability a future UI
 will connect to, verified so far with a script that streams synthesized
 audio in place of a live microphone.
+
+**Phone-call agent** — real inbound phone calls, via Exotel's
+Voicebot/AgentStream applet connecting to `WS /api/v1/calls/stream`. Unlike
+every other channel, a caller isn't already authenticated: they can ask
+general questions (routed to `search_knowledge_base`) freely, but anything
+account-specific first requires stating their registered mobile number,
+which `verify_phone_number` checks against `auth_service.get_user_by_phone`
+before any other tool is allowed to run. Once verified, every tool call
+goes through the *exact same* `app/llm/tool_executor.py` every other
+channel uses — same security scoping, same services. Unlike the browser
+voice endpoint, this channel doesn't reuse `chat_service`/Gemini directly:
+Deepgram's Voice Agent API runs STT (Flux), the LLM ("think", Gemini
+2.5 Flash — pinned, since Deepgram's managed Google provider doesn't accept
+the `gemini-flash-latest` alias used elsewhere), and TTS (Aura) together
+over one WebSocket, and `app/services/telephony_service.py` is purely an
+audio/function-call bridge between that and Exotel — see
+`app/llm/call_system_prompt.py` and `call_tool_schemas.py` for what the
+agent is configured with. English-only (Aura has no Hindi voice, unlike
+text chat's multi-language support), and auth on the Exotel side is Basic
+Auth on the handshake (Exotel has no HMAC signing like Twilio).
 
 **General policy/support Q&A.** `search_knowledge_base` answers
 questions about refunds, cancellations, the wallet/cashback program,
@@ -170,34 +190,98 @@ genuinely out of range).
 - **No frontend for voice yet** — `/api/v1/chat/voice/stream` is a real,
   working backend capability, but nothing captures a live microphone and
   connects to it. Verified with a script, not a browser.
-- **TTS is local/robotic** (pyttsx3, Windows SAPI voices) — functional,
-  free, no account, but not natural-sounding. Would need a paid/cloud
-  voice service to sound better.
+- ~~TTS is local/robotic (pyttsx3)~~ — **resolved**: switched to Deepgram
+  Aura (same voice as the phone-call agent) once pyttsx3's Windows-only
+  SAPI5 dependency turned out to be incompatible with the Linux deploy
+  target.
 - **One failed voice turn ends the call** — if the chat pipeline errors
   mid-conversation (e.g. an LLM quota hit), the current voice socket
   closes rather than recovering and waiting for the next utterance.
   Acceptable for now; would need explicit handling to change.
+- **Phone-call agent has been tested against real Exotel calls** — this
+  surfaced two real bugs (audio chunk-size misalignment causing glitching,
+  and a sample-rate mismatch causing pitch/speed-distorted audio, since
+  this Exotel account's Voicebot Applet UI has no sample-rate selector and
+  silently uses 8000 Hz regardless of docs describing an 8k/16k/24k
+  choice), both fixed — see backend CLAUDE.md's "Phone-call layer" for
+  the details. Also surfaced: this account's Applet has no Basic Auth
+  field either, so `EXOTEL_REQUIRE_AUTH=false` exists as an explicit,
+  loudly-logged opt-out until that's available.
+- **Phone verification is honor-system, not caller-ID-based** — the caller
+  states their registered number out loud rather than it being confirmed
+  against the network-verified caller ID Exotel provides in the `start`
+  event's `from` field. Simpler to build and matches what was asked for,
+  but means anyone who knows (or guesses) a registered number can act as
+  that customer over the phone. Revisit if this becomes a real product,
+  not just a demo.
+- **No barge-in/interruption handling in the bridge** — Deepgram's Voice
+  Agent protocol has events for it (`UserStartedSpeaking`, etc.) but
+  `telephony_service.py` doesn't currently act on them to cut off
+  in-progress agent speech early.
+- **Pre-verification call turns aren't persisted** — `Conversation`/
+  `Message` rows for a call only start once a phone number verifies (needs
+  a `user_id` to attach to); the general-Q&A portion before that point
+  isn't logged anywhere, unlike text/voice chat's full history.
+
+## Deployment
+
+**Target: Koyeb's free tier** (a container host, not just a buildpack
+platform) — chosen over Render/Railway/Fly.io specifically because their
+free tiers either don't exist anymore (Railway, Fly.io as of 2026) or
+sleep with a 30-60s cold start (Render) that would make the phone-call
+agent miss Exotel's ~10s inbound-call response window. Koyeb's free nano
+instance sleeps after 1hr idle too, but wakes in ~1-5s — inside that
+budget — and a scheduled keep-alive ping avoids sleeping at all.
+
+**`Dockerfile`** at the repo root — multi-layer (deps from `uv.lock`
+installed before app code copied in, so code-only changes don't
+invalidate the slow dependency-install layer). Build-verified locally
+(`docker build .` succeeds cleanly on this Linux base image) — this is
+exactly where the pyttsx3-is-Windows-only issue would have surfaced, and
+didn't, because voice_service.py no longer depends on it (see "Voice
+layer" in CLAUDE.md). Migrations are deliberately NOT run automatically
+on container start — Supabase already has the schema applied; run
+`uv run alembic upgrade head` manually if a migration is genuinely needed
+before a deploy.
+
+**Steps** (all dashboard/account actions, not code):
+1. Push this repo to GitHub (Koyeb deploys from a connected repo or a
+   pushed Docker image).
+2. Create a Koyeb account → new Web Service from this repo →
+   Dockerfile-based build.
+3. Set every env var from `.env.example` in Koyeb's dashboard with real
+   production values — **generate a fresh `JWT_SECRET_KEY`, don't reuse
+   the dev one** (any tokens issued under it become invalid the moment
+   this changes, which is expected and fine for a first deploy).
+   `ENVIRONMENT=production`, `DEBUG=false`. `CORS_ORIGINS` needs the
+   deployed frontend's exact URL once that exists (chicken-and-egg with
+   step 5 below — deploy backend first with a placeholder, update once
+   the frontend URL is known, redeploy).
+4. Set up a free external pinger (e.g. cron-job.org, UptimeRobot) hitting
+   `https://<your-app>.koyeb.app/health` every ~50 minutes, so the
+   instance never actually goes idle long enough to sleep.
+5. Deploy the frontend (see `../frontend/README.md`) to Vercel/Netlify/
+   Cloudflare Pages, pointing `VITE_API_URL`/`VITE_WS_URL` at this
+   backend's Koyeb URL.
+6. Update Exotel's Voicebot Applet WSS URL from the ngrok tunnel used for
+   local testing to `wss://<your-app>.koyeb.app/api/v1/calls/stream` —
+   this also means ngrok is no longer needed once this is live, only for
+   local dev/testing going forward.
 
 ## Production readiness
 
-This project is now under version control (`git init` at the repo root,
-`C:\AI_Agent`, not `backend/` — the backend is one component in a larger
-project that will include a frontend). Basic hardening (rate limiting,
-a global exception handler) is in place; still genuinely missing before
-a real production deploy:
+Basic hardening (rate limiting, a global exception handler) is in place;
+still genuinely missing before treating this as a hardened production
+service (separate from "deployed and working," which the above achieves):
 
 - No automated test suite (`pytest` is a listed dependency, unused so far).
 - No password reset / refresh-token flow — JWTs just expire after 24h.
 - `/health` doesn't check DB connectivity.
 - No structured logging / error tracking beyond what prints to the console.
 - Rate limiting is in-memory/single-instance — would need a shared
-  backend (Redis) to work correctly across multiple processes.
-- `.env` still has `ENVIRONMENT=development`, `DEBUG=true`,
-  `CORS_ORIGINS=["http://localhost:3000"]` — all need real values before
-  a real deploy.
-- No Dockerfile/Procfile yet.
-- pyttsx3 (voice TTS) is effectively Windows-only — would need
-  reconsidering for a Linux production host.
+  backend (Redis) to work correctly across multiple processes (a single
+  Koyeb free instance is single-process, so this isn't a blocker for the
+  current deploy, just a scaling-out limitation).
 
 ## Testing conventions
 
@@ -256,3 +340,16 @@ this project isn't in version control yet — this is the only record.
    `get_user_from_token` the REST auth now shares). No frontend yet, by
    design — verified end-to-end with a script that synthesizes a test
    utterance and streams it in place of a live microphone.
+9. **Phone-call agent** — new `WS /api/v1/calls/stream` endpoint for
+   Exotel's Voicebot/AgentStream applet, bridging raw call audio to
+   Deepgram's Voice Agent API (STT + Gemini 2.5 Flash "think" + Aura TTS
+   together, unlike the browser voice endpoint's separate
+   STT→chat_service→TTS pipeline). New phone-verification flow
+   (`verify_phone_number` → `auth_service.get_user_by_phone`) gates every
+   tool except `search_knowledge_base` until a caller states a registered
+   number — everything past that point reuses the same
+   `app/llm/tool_executor.py` every other channel does. English-only
+   (Aura has no Hindi voice). Basic Auth on the handshake, since Exotel
+   has no HMAC request signing. See "Known placeholders" for what's still
+   untested against a real call.
+   

@@ -1,6 +1,14 @@
 import logging
 
 from fastapi import FastAPI, Request, status
+
+# Without this, Python's root logger defaults to WARNING with no handler —
+# every logger.info() call across the app (e.g. telephony_service.py's
+# call-diagnostics logging) silently vanishes even though uvicorn's OWN
+# access/error logs still show (uvicorn configures its loggers separately).
+# Discovered the hard way debugging a live phone call with "missing" logs
+# that were actually just never emitted.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler

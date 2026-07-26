@@ -1,8 +1,3 @@
-import asyncio
-import os
-import tempfile
-
-import pyttsx3
 from deepgram import AsyncDeepgramClient
 
 from app.core.config import settings
@@ -10,7 +5,9 @@ from app.core.config import settings
 _client: AsyncDeepgramClient | None = None
 
 
-def _get_client() -> AsyncDeepgramClient:
+def get_client() -> AsyncDeepgramClient:
+    # Shared with app.services.telephony_service (the phone-call agent) —
+    # one lazily-created client per process, same API key.
     global _client
     if _client is None:
         _client = AsyncDeepgramClient(api_key=settings.DEEPGRAM_API_KEY)
@@ -27,7 +24,7 @@ def open_transcription_stream(sample_rate: int = 16000):
     ourselves. Returns an async context manager — use as
     `async with open_transcription_stream() as socket:`.
     """
-    return _get_client().listen.v1.connect(
+    return get_client().listen.v1.connect(
         model="nova-3",
         encoding="linear16",
         sample_rate=sample_rate,
@@ -39,23 +36,29 @@ def open_transcription_stream(sample_rate: int = 16000):
     )
 
 
-def _synthesize_sync(text: str) -> bytes:
-    # A fresh engine per call, run inside asyncio.to_thread (below) — pyttsx3
-    # wraps Windows SAPI5 via COM, which is thread-affine; reusing one engine
-    # instance across the thread-pool's worker threads is not safe, but a
-    # new instance per call on whichever thread runs it is.
-    engine = pyttsx3.init()
-    fd, path = tempfile.mkstemp(suffix=".wav")
-    os.close(fd)
-    try:
-        engine.save_to_file(text, path)
-        engine.runAndWait()
-        with open(path, "rb") as f:
-            return f.read()
-    finally:
-        os.remove(path)
-
-
 async def text_to_speech(text: str) -> bytes:
-    """WAV bytes for `text`, spoken with the local OS voice. Never touches the network."""
-    return await asyncio.to_thread(_synthesize_sync, text)
+    """
+    WAV bytes for `text`, via Deepgram's TTS REST API (Aura) — the one-shot
+    `speak.v1.audio.generate` endpoint, not the streaming Voice Agent
+    telephony_service.py uses for phone calls (this is a single
+    request/response synthesis, not a live bidirectional session, so the
+    simpler REST call is the right fit here).
+
+    Replaced pyttsx3 (local, free, but Windows-only — wrapped SAPI5 via
+    COM) specifically because it couldn't run on the Linux host this app
+    deploys to; reuses the same VOICE_AGENT_TTS_VOICE the call agent
+    already uses, one less TTS system/voice choice to maintain.
+    """
+    chunks = [
+        chunk
+        async for chunk in get_client().speak.v1.audio.generate(
+            text=text,
+            model=settings.VOICE_AGENT_TTS_VOICE,
+            # `container` only applies to non-compressed encodings — Deepgram
+            # rejects container="wav" with the API's default encoding (mp3),
+            # so encoding must be given explicitly here, not left implicit.
+            encoding="linear16",
+            container="wav",
+        )
+    ]
+    return b"".join(chunks)
