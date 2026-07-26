@@ -13,9 +13,11 @@ if TYPE_CHECKING:
 
 
 class CheckoutRequest(BaseModel):
+    # Local Butcher is delivery-only — no pickup option. address_id is
+    # always required (order_service.checkout still re-validates this
+    # server-side rather than trusting the schema alone).
     outlet_id: uuid.UUID
-    fulfillment_type: str = Field(pattern="^(delivery|pickup)$")
-    address_id: uuid.UUID | None = None  # required when fulfillment_type == "delivery"
+    address_id: uuid.UUID
 
 
 class OrderItemModify(BaseModel):

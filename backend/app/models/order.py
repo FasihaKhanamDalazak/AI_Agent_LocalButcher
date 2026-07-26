@@ -30,10 +30,15 @@ class Order(Base, UUIDPKMixin, TimestampMixin):
 
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     outlet_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("outlets.id"), nullable=False)
-    address_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("addresses.id"), nullable=True)  # null if pickup
+    # Nullable at the DB level for backward compatibility with pre-delivery-only rows;
+    # order_service.checkout now always requires and sets a real address_id.
+    address_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("addresses.id"), nullable=True)
     status_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("order_statuses.id"), nullable=False)
 
-    fulfillment_type: Mapped[str] = mapped_column(String(20), nullable=False)  # "delivery" | "pickup"
+    # Always "delivery" now — pickup was removed as a concept (see backend CLAUDE.md).
+    # Column kept as-is (no migration) rather than dropped, since order_to_read still
+    # exposes it and dropping it isn't necessary to remove pickup as an option.
+    fulfillment_type: Mapped[str] = mapped_column(String(20), nullable=False)
     total_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
 
     # Customer-facing sequential number ("order #1000"), separate from the

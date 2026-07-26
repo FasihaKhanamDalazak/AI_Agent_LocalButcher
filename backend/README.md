@@ -493,4 +493,38 @@ this project isn't in version control yet — this is the only record.
     abbreviation. Text chat was never affected (showing "Rs. 320" as
     written text is normal). Verified against the live Deepgram service
     for both prompts.
-   
+16. **Two real production bugs reported together, fixed together**:
+    (a) a brand-new account's chat-added address (no geocoding, so no
+    coordinates) blocked delivery entirely with "we don't have this
+    address on file yet" — a hard block on a core feature for what will
+    be the founder's very first account. Fixed with a text-based
+    fallback: an address whose text mentions "Hyderabad" is now treated
+    as deliverable by the first active outlet even with no coordinates
+    (`outlet_service.get_nearest_outlet` and `order_service.checkout`,
+    kept in sync). (b) switching from a voice turn to typing sometimes
+    hit "conversation not found" and hard-blocked further chat — the
+    exact root cause wasn't pinned down despite investigation, so rather
+    than leave a known way to hard-block a customer, `chat_service.
+    _get_or_create_conversation` now logs a warning and silently starts a
+    fresh conversation if a given `conversation_id` can't be resolved,
+    instead of raising a 404. `ConversationNotFoundError` removed as dead
+    code. Verified against the real database: a synthetic nonexistent
+    `conversation_id` no longer raises, a fresh conversation is created,
+    and the turn completes normally.
+17. **Removed pickup — delivery only, everywhere** — Local Butcher has no
+    real pickup counter workflow, and offering it as a choice in
+    chat/voice/call added a branch (single "ready by" ETA, no address
+    requirement) that was never actually going to be used. `checkout`
+    (REST, and the `checkout` tool for chat/voice/call) no longer takes a
+    `fulfillment_type` — an `address_id` is now always required, and
+    `Order.fulfillment_type` is always written as `"delivery"` (column
+    kept, not migrated away, since `order_to_read` still exposes it and
+    dropping it wasn't necessary). `order_service._calculate_eta` lost
+    its pickup single-time branch, always returning the delivery window
+    now. All three system prompts and the cart checkout UI
+    (`CartPanel.jsx`, which had a delivery/pickup toggle) updated to
+    match. Verified with a real checkout against the live database
+    (delivery order placed and cancelled cleanly, `fulfillment_type`
+    reads back as `"delivery"`) and confirmed the old `fulfillment_type`
+    field is simply ignored, not accepted, by the new `CheckoutRequest`
+    schema.

@@ -61,8 +61,8 @@ async def _add_address(db: AsyncSession, user: User, args: dict) -> dict:
         raise ToolExecutionError("label and address_text are required.")
     # lat/lng are deliberately never set from chat — the model has no real
     # way to know a text address's coordinates and must not guess them.
-    # This address works for pickup immediately; delivery-range checks
-    # need it updated with real coordinates first (see AddressMissingLocationError).
+    # Delivery-range checks need it updated with real coordinates (or the
+    # address text to mention Hyderabad) first — see AddressMissingLocationError.
     address = await address_service.create_address(
         db, user.id, label, address_text, lat=None, lng=None, is_default=bool(args.get("is_default") or False)
     )
@@ -112,7 +112,7 @@ async def _get_nearest_outlet(db: AsyncSession, user: User, args: dict) -> dict:
     except outlet_service.AddressMissingLocationError:
         raise ToolExecutionError(
             "That address doesn't have location details on file yet, so delivery distance can't be checked "
-            "for it — try a different saved address, or ask about pickup instead."
+            "for it — try a different saved address, or mention Hyderabad in the address text."
         )
     except outlet_service.NoActiveOutletsError:
         raise ToolExecutionError("No active outlets are available right now.")
@@ -188,14 +188,13 @@ async def _remove_from_cart(db: AsyncSession, user: User, args: dict) -> dict:
 
 async def _checkout(db: AsyncSession, user: User, args: dict) -> dict:
     outlet_id = _uuid(args, "outlet_id")
-    fulfillment_type = args.get("fulfillment_type")
     address_id = _optional_uuid(args, "address_id")
     try:
-        order = await order_service.checkout(db, user.id, outlet_id, fulfillment_type, address_id)
+        order = await order_service.checkout(db, user.id, outlet_id, address_id)
     except order_service.EmptyCartError:
         raise ToolExecutionError("The cart is empty — add items before checking out.")
     except order_service.AddressRequiredError:
-        raise ToolExecutionError("A delivery address is required for delivery orders.")
+        raise ToolExecutionError("A delivery address is required to place an order.")
     except order_service.AddressNotFoundError:
         raise ToolExecutionError("That address wasn't found.")
     except order_service.OutletNotFoundError:
@@ -203,7 +202,7 @@ async def _checkout(db: AsyncSession, user: User, args: dict) -> dict:
     except order_service.AddressMissingLocationError:
         raise ToolExecutionError(
             "That address doesn't have location details on file yet, so I can't confirm delivery is possible "
-            "there — try a different saved address, or choose pickup instead."
+            "there — try a different saved address, or an address that mentions Hyderabad."
         )
     except order_service.DeliveryOutOfRangeError as e:
         raise ToolExecutionError(

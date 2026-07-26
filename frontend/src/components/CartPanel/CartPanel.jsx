@@ -6,10 +6,9 @@ import * as api from "../../services/api.js";
 import { formatCurrency } from "../../utils/helpers.js";
 
 /**
- * Cart contents + checkout, in one panel. Checkout needs an outlet and a
- * fulfillment type (pickup needs neither address nor delivery-range
- * checks; delivery needs a saved address) — both lists are loaded lazily,
- * only once the panel is actually opened.
+ * Cart contents + checkout, in one panel. Delivery only — checkout needs
+ * an outlet and a saved address; both lists are loaded lazily, only once
+ * the panel is actually opened.
  */
 function CartPanel({ isOpen, onClose }) {
   const [cart, setCart] = useState(null);
@@ -20,7 +19,6 @@ function CartPanel({ isOpen, onClose }) {
   const [busyItemId, setBusyItemId] = useState(null);
 
   const [outletId, setOutletId] = useState("");
-  const [fulfillmentType, setFulfillmentType] = useState("delivery");
   const [addressId, setAddressId] = useState("");
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [placedOrder, setPlacedOrder] = useState(null);
@@ -82,11 +80,7 @@ function CartPanel({ isOpen, onClose }) {
     setIsCheckingOut(true);
     setError(null);
     try {
-      const order = await api.checkout({
-        outletId,
-        fulfillmentType,
-        addressId: fulfillmentType === "delivery" ? addressId : undefined,
-      });
+      const order = await api.checkout({ outletId, addressId });
       setPlacedOrder(order);
       setCart({ items: [], subtotal: 0 });
     } catch (err) {
@@ -199,51 +193,31 @@ function CartPanel({ isOpen, onClose }) {
                 ))}
               </Select>
 
-              <div className="mb-3 flex gap-2">
-                {["delivery", "pickup"].map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setFulfillmentType(type)}
-                    className={`flex-1 rounded-input border px-3 py-2 text-sm font-medium capitalize transition ${
-                      fulfillmentType === type
-                        ? "border-red/50 bg-red/[0.06] text-red"
-                        : "border-line text-ink-soft hover:text-ink"
-                    }`}
-                  >
-                    {type}
-                  </button>
-                ))}
-              </div>
-
-              {fulfillmentType === "delivery" &&
-                (addresses.length === 0 ? (
-                  <div className="mb-4">
-                    <span className="mb-1.5 block text-sm font-medium text-ink">Deliver to</span>
-                    <p className="text-xs text-ink-soft">
-                      No saved addresses yet — add one from the Addresses panel first.
-                    </p>
-                  </div>
-                ) : (
-                  <Select
-                    label="Deliver to"
-                    value={addressId}
-                    onChange={(e) => setAddressId(e.target.value)}
-                    className="mb-4"
-                  >
-                    {addresses.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.label} — {a.address_text}
-                      </option>
-                    ))}
-                  </Select>
-                ))}
+              {addresses.length === 0 ? (
+                <div className="mb-4">
+                  <span className="mb-1.5 block text-sm font-medium text-ink">Deliver to</span>
+                  <p className="text-xs text-ink-soft">
+                    No saved addresses yet — add one from the Addresses panel first.
+                  </p>
+                </div>
+              ) : (
+                <Select
+                  label="Deliver to"
+                  value={addressId}
+                  onChange={(e) => setAddressId(e.target.value)}
+                  className="mb-4"
+                >
+                  {addresses.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.label} — {a.address_text}
+                    </option>
+                  ))}
+                </Select>
+              )}
 
               <button
                 type="button"
-                disabled={
-                  isCheckingOut || !outletId || (fulfillmentType === "delivery" && !addressId)
-                }
+                disabled={isCheckingOut || !outletId || !addressId}
                 onClick={handleCheckout}
                 className="sheen w-full rounded-button bg-red-gradient px-5 py-3 text-sm font-semibold text-white shadow-glow transition duration-200 hover:shadow-glow-lg disabled:cursor-not-allowed disabled:opacity-60"
               >

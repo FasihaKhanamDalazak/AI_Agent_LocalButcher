@@ -99,7 +99,7 @@ async def _get_status_by_code_or_none(db: AsyncSession, code: str) -> OrderStatu
     return result.scalar_one_or_none()
 
 
-def _calculate_eta(fulfillment_type: str) -> tuple[datetime | None, datetime | None]:
+def _calculate_eta() -> tuple[datetime, datetime]:
     """
     Tied directly to the SAME timeline that actually marks the order
     delivered (auto_progress_orders, AUTO_PROGRESS_DELIVERED_MINUTES) —
@@ -113,13 +113,12 @@ def _calculate_eta(fulfillment_type: str) -> tuple[datetime | None, datetime | N
     channel, via the shared order_to_read serializer — see backend
     CLAUDE.md rule #4), so fixing the calculation here fixes what every
     channel reports, with no per-channel change needed.
+
+    Delivery-only now — there's no pickup "ready by" single-time branch
+    anymore (see checkout() below and backend CLAUDE.md).
     """
     now = datetime.now(timezone.utc)
     delivered_at = timedelta(minutes=settings.AUTO_PROGRESS_DELIVERED_MINUTES)
-
-    if fulfillment_type == "pickup":
-        return now + delivered_at, None  # single "ready by" time, no window
-
     half_window = timedelta(minutes=settings.ETA_WINDOW_MINUTES / 2)
     return now + delivered_at - half_window, now + delivered_at + half_window
 
@@ -205,34 +204,41 @@ async def checkout(
     db: AsyncSession,
     user_id: uuid.UUID,
     outlet_id: uuid.UUID,
-    fulfillment_type: str,
     address_id: uuid.UUID | None,
 ) -> Order:
-    if fulfillment_type == "delivery" and address_id is None:
+    # Delivery-only — pickup has been removed as a concept (see backend
+    # CLAUDE.md). An address is always required now; still validated here
+    # server-side rather than trusted from the schema/tool args alone.
+    if address_id is None:
         raise AddressRequiredError()
 
     outlet = await db.get(Outlet, outlet_id)
     if outlet is None:
         raise OutletNotFoundError()
 
-    if address_id is not None:
-        address = await db.get(Address, address_id)
-        if address is None or address.user_id != user_id:
-            raise AddressNotFoundError()
+    address = await db.get(Address, address_id)
+    if address is None or address.user_id != user_id:
+        raise AddressNotFoundError()
 
-        # Local Butcher only serves within each outlet's delivery radius —
-        # validated here (not just left to get_nearest_outlet upstream) so
-        # a stale/guessed outlet_id can never produce an undeliverable
-        # order. Addresses added via chat never get coordinates (the model
-        # never fabricates lat/lng — see add_address), so this must be a
-        # hard requirement, never silently skipped, or an unvalidated
-        # address would sail through checkout with no range check at all.
-        if fulfillment_type == "delivery":
-            if address.lat is None or address.lng is None:
-                raise AddressMissingLocationError(address.label)
-            distance = haversine_km(address.lat, address.lng, outlet.lat, outlet.lng)
-            if distance > outlet.delivery_radius_km:
-                raise DeliveryOutOfRangeError(outlet.name, distance, outlet.delivery_radius_km)
+    # Local Butcher only serves within each outlet's delivery radius —
+    # validated here (not just left to get_nearest_outlet upstream) so
+    # a stale/guessed outlet_id can never produce an undeliverable order.
+    if address.lat is None or address.lng is None:
+        # Chat-added addresses never get real coordinates (no geocoding —
+        # see add_address). Blocking every delivery order from any such
+        # address — including a brand-new account's very first one, which
+        # is ALL of them — was worse than an approximate check: this
+        # business only serves Hyderabad at all, so an address that at
+        # least says "Hyderabad" is allowed through without a precise
+        # radius check instead of hard-blocking checkout. Same fallback as
+        # get_nearest_outlet (outlet_service.py) — keep both in sync if
+        # this changes.
+        if "hyderabad" not in address.address_text.lower():
+            raise AddressMissingLocationError(address.label)
+    else:
+        distance = haversine_km(address.lat, address.lng, outlet.lat, outlet.lng)
+        if distance > outlet.delivery_radius_km:
+            raise DeliveryOutOfRangeError(outlet.name, distance, outlet.delivery_radius_km)
 
     cart_rows = await cart_service.get_cart(db, user_id)
     if not cart_rows:
@@ -257,14 +263,14 @@ async def checkout(
             total += product.price * qty
 
         pending_status = await _get_status_by_code(db, "pending")
-        eta_start, eta_end = _calculate_eta(fulfillment_type)
+        eta_start, eta_end = _calculate_eta()
 
         order = Order(
             user_id=user_id,
             outlet_id=outlet_id,
             address_id=address_id,
             status_id=pending_status.id,
-            fulfillment_type=fulfillment_type,
+            fulfillment_type="delivery",
             total_amount=total,
             eta_start=eta_start,
             eta_end=eta_end,

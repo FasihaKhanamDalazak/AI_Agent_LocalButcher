@@ -134,13 +134,12 @@ export async function removeCartItem(itemId) {
 // Orders
 // ---------------------------------------------------------------------------
 
-/** @param {{outletId: string, fulfillmentType: "delivery"|"pickup", addressId?: string}} data */
-export async function checkout({ outletId, fulfillmentType, addressId }) {
+/** Delivery only — no pickup option. @param {{outletId: string, addressId: string}} data */
+export async function checkout({ outletId, addressId }) {
   try {
     const { data } = await httpClient.post("/orders/checkout", {
       outlet_id: outletId,
-      fulfillment_type: fulfillmentType,
-      address_id: addressId ?? null,
+      address_id: addressId,
     });
     return data;
   } catch (error) {

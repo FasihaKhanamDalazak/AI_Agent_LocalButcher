@@ -21,15 +21,23 @@ async def checkout(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        order = await order_service.checkout(
-            db, current_user.id, data.outlet_id, data.fulfillment_type, data.address_id
-        )
+        order = await order_service.checkout(db, current_user.id, data.outlet_id, data.address_id)
     except order_service.EmptyCartError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cart is empty")
     except order_service.AddressRequiredError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="address_id is required for delivery")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="address_id is required")
     except order_service.AddressNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Address not found")
+    except order_service.AddressMissingLocationError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="That address doesn't have location details on file yet and doesn't mention Hyderabad.",
+        )
+    except order_service.DeliveryOutOfRangeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"That address is out of {e.outlet_name}'s delivery range.",
+        )
     except order_service.InsufficientStockError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

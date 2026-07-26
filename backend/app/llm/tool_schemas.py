@@ -30,9 +30,9 @@ TOOL_DECLARATIONS = [
         name="add_address",
         description=(
             "Save a new delivery address for the customer. Note: this does NOT geocode the address — "
-            "it has no precise location on file until updated with one separately, so it works "
-            "immediately for pickup but delivery-range checks (get_nearest_outlet, checkout) won't "
-            "work for it yet. Mention this if the customer's intent is delivery to a brand-new address."
+            "it has no precise location on file until updated with one separately, so delivery-range "
+            "checks (get_nearest_outlet, checkout) can't confirm it's deliverable yet unless the "
+            "address text itself mentions Hyderabad. Mention this if relevant."
         ),
         parameters=_obj(
             {
@@ -147,18 +147,16 @@ TOOL_DECLARATIONS = [
     ),
     types.FunctionDeclaration(
         name="checkout",
-        description="Place an order from everything currently in the customer's cart.",
+        description=(
+            "Place an order from everything currently in the customer's cart. Delivery only — "
+            "there is no pickup option."
+        ),
         parameters=_obj(
             {
                 "outlet_id": _schema(types.Type.STRING, "UUID of the outlet fulfilling the order"),
-                "fulfillment_type": _schema(
-                    types.Type.STRING, "Either 'delivery' or 'pickup'", enum=["delivery", "pickup"]
-                ),
-                "address_id": _schema(
-                    types.Type.STRING, "UUID of the delivery address — required when fulfillment_type is 'delivery'"
-                ),
+                "address_id": _schema(types.Type.STRING, "UUID of the delivery address"),
             },
-            required=["outlet_id", "fulfillment_type"],
+            required=["outlet_id", "address_id"],
         ),
     ),
     types.FunctionDeclaration(

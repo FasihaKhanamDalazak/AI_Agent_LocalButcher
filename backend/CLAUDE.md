@@ -222,6 +222,22 @@ as a bracketed prefix on the current turn only (see
 `chat_service._build_cart_grounding_note`), never trust history alone for
 anything that must be exactly right.
 
+**An unresolvable `conversation_id` starts a fresh conversation instead of
+404ing.** A real customer's session sometimes carried a `conversation_id`
+(e.g. handed off from a voice turn — see "Voice layer" below) that
+`_get_or_create_conversation` couldn't find, hard-blocking every further
+message with a 404 until they reloaded the page. The exact root cause
+wasn't pinned down despite investigation (ref-based state across
+`useChat.js`/`useVoiceChat.js` was suspected but not confirmed) — rather
+than leave a real, reproducible way to hard-block a customer over an
+edge case, the fix is resilience-based: if the given `conversation_id`
+doesn't resolve to a conversation owned by this user, log a warning
+(so a real fix can still be tracked down later) and silently start a new
+one instead of raising. `ConversationNotFoundError` was removed entirely
+as dead code once this landed. Verified against the real database: a
+synthetic, definitely-nonexistent `conversation_id` no longer raises —
+a fresh conversation is created and the turn completes normally.
+
 **The greeting (`GET /chat/greeting`) is deliberately NOT an LLM call** —
 every fact in it is already certain from the DB, so it's built with plain
 Python string formatting. Don't be tempted to route it through Gemini;
@@ -263,6 +279,21 @@ Butcher genuinely only serves within Hyderabad; the system prompt tells
 the model to treat a rejection here as a normal "we don't cover that
 area yet" case, not an error to apologize awkwardly for.
 
+**Delivery-only — pickup was removed as a concept, not just discouraged.**
+`checkout` (REST `CheckoutRequest`, and the `checkout` tool every
+chat/voice/call channel shares) no longer accepts a `fulfillment_type` at
+all — `order_service.checkout()`'s signature dropped the parameter
+entirely, `address_id` is now always required, and every order is
+written with `fulfillment_type="delivery"` hardcoded. `Order.
+fulfillment_type` the DB column is kept, unmigrated — `order_to_read`
+still exposes it (always `"delivery"` now) and there was no need to drop
+it just to remove pickup as a customer-facing choice. `_calculate_eta`
+lost its pickup branch (single "ready by" time, no window) — it always
+returns the delivery window now. All three system prompts and
+`CartPanel.jsx` (which had a delivery/pickup toggle) were updated to
+match — don't reintroduce a pickup option in only one of them if this
+ever comes back.
+
 **Chat can manage addresses now, but never sets coordinates.**
 `add_address`/`update_address` (tool_executor.py) always pass
 `lat=None, lng=None` to `address_service` — there's no geocoding in this
@@ -273,7 +304,22 @@ them). The consequence: `get_nearest_outlet` and `checkout` both now
 treat missing coordinates as a hard stop for delivery
 (`AddressMissingLocationError`) rather than silently skipping the range
 check — that skip used to be the default and was a real gap once chat
-could create addresses. Pickup orders are unaffected either way.
+could create addresses.
+
+**A text-based Hyderabad fallback softens that hard stop** — a real,
+customer-caught bug: a brand-new account's very first chat-added address
+(no coordinates yet, which is EVERY chat-added address) blocked delivery
+entirely, hard-blocking a core feature for exactly the kind of account
+the founder will actually create. Both `outlet_service.get_nearest_outlet`
+and `order_service.checkout` now treat an address whose text mentions
+"Hyderabad" (case-insensitive substring match) as deliverable by the
+first active outlet even with no coordinates on file — Local Butcher only
+serves Hyderabad at all, so the text mention is treated as good enough
+without a precise radius check. An address that doesn't mention
+Hyderabad still hard-stops as before. Keep both call sites in sync if
+this fallback changes. Verified against the real database both ways: a
+Hyderabad-text address with no coordinates checked out successfully; a
+non-Hyderabad address with no coordinates was still correctly blocked.
 
 **Currency**: `settings.CURRENCY_LABEL` (default `"Rs."`), referenced in
 both the system prompt and the grounding note. No currency is stored
