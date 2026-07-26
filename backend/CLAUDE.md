@@ -475,6 +475,24 @@ Both mechanisms verified directly against the live Deepgram service
 (not just code review): `send_inject_agent_message` correctly produces a
 `ConversationText` event followed by real audio bytes, no errors.
 
+**"Rs." spoken as "R, S" — a self-contradicting prompt instruction, fixed
+in both voice system prompts.** The original "Currency" section said to
+*"say them with the '{settings.CURRENCY_LABEL}' label"* — literally
+instructing the model to speak the abbreviation — while ALSO giving a
+"three hundred and twenty rupees" example right next to it, a real
+self-contradiction that let the model sometimes say "Rs." out loud,
+which a text-to-speech voice reads letter by letter ("R, S"), not as a
+word. Rewritten in both `call_system_prompt.py` and
+`browser_voice_system_prompt.py` to unambiguously say NEVER speak
+`{settings.CURRENCY_LABEL}` literally, always say "rupees" instead — no
+example left that could be (mis)read as permission to do otherwise.
+Text chat's `system_prompt.py` was never affected — showing "Rs. 320" as
+written text is completely normal there, only speech has this problem.
+Verified against the live Deepgram service for both prompts separately
+(a live `FunctionCallRequest`/response round trip, not just a plain
+reply): both correctly said "three hundred and twenty rupees," not
+"Rs. 320."
+
 **Tool declarations are converted once, shared by all three channels, not
 duplicated** — `tool_schemas.py` itself now builds and exports
 `PLAIN_JSON_TOOL_DECLARATIONS`, Deepgram's plain-JSON-schema function

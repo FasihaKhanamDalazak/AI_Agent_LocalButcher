@@ -485,4 +485,12 @@ this project isn't in version control yet — this is the only record.
     specifically gets a guaranteed spoken confirmation — not left to the
     model to remember, after a separate report of the call sometimes
     going silent right after verifying instead of confirming it.
+15. **Fixed "Rs." being spoken as "R, S" on calls and voice** — a
+    self-contradicting prompt instruction was the cause: it told the
+    model to *"say them with the 'Rs.' label"* while also showing a
+    "rupees" example right next to it. Rewritten in both voice system
+    prompts to unambiguously always say "rupees," never the literal
+    abbreviation. Text chat was never affected (showing "Rs. 320" as
+    written text is normal). Verified against the live Deepgram service
+    for both prompts.
    
