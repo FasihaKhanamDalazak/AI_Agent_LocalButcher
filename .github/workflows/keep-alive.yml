@@ -1,0 +1,23 @@
+name: Keep Render backend awake
+
+# Render's free web service sleeps after 15 minutes idle, with a 30-60s
+# cold start on wake — long enough to make an inbound Exotel call miss its
+# ~10s response window (see backend/README.md's "Deployment" section).
+# Pinging /health every 10 minutes (safely under that 15-min threshold)
+# keeps it from ever actually going idle long enough to sleep.
+#
+# GitHub's cron scheduler isn't perfectly precise, especially under high
+# platform load — occasional delay is expected and acceptable here, this
+# is a best-effort keep-alive, not a guarantee.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend health endpoint
+        run: |
+          curl -sS -f https://ai-agent-localbutcher.onrender.com/health
