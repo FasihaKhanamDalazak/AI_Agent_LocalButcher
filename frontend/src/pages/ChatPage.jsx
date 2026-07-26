@@ -63,7 +63,12 @@ function ChatPage() {
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }, [resetChat]);
 
-  const showConversation = messages.length > 0 || isLoading || isGreeting;
+  // Voice's "thinking" gap gets the exact same loading bubble text chat
+  // already shows — one consistent "the assistant is working on it"
+  // signal regardless of which input mode produced the pending turn.
+  const isBusy = isLoading || isGreeting || voice.isProcessing;
+
+  const showConversation = messages.length > 0 || isBusy;
 
   return (
     <div className="relative flex h-dvh flex-col overflow-hidden bg-background">
@@ -87,7 +92,7 @@ function ChatPage() {
           {showConversation && (
             <ChatContainer
               messages={messages}
-              isLoading={isLoading || isGreeting}
+              isLoading={isBusy}
               onFollowUpSelect={sendMessage}
             />
           )}
@@ -97,7 +102,7 @@ function ChatPage() {
 
         <ChatInput
           onSend={sendMessage}
-          isLoading={isLoading || isGreeting}
+          isLoading={isBusy}
           onMicClick={voice.toggleRecording}
           isRecording={voice.isRecording}
           isConnecting={voice.isConnecting}
