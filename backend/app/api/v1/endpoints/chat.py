@@ -39,11 +39,13 @@ async def chat(
     db: AsyncSession = Depends(get_db),
 ):
     try:
+        # chat_service.send_message no longer raises ConversationNotFoundError
+        # for an unresolvable conversation_id — it starts a fresh conversation
+        # instead (see _get_or_create_conversation's docstring/comment) rather
+        # than hard-blocking the customer over it.
         conversation_id, reply, follow_ups = await chat_service.send_message(
             db, current_user, data.conversation_id, data.message
         )
-    except chat_service.ConversationNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
     except chat_service.AssistantUnavailableError as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     return ChatResponse(conversation_id=conversation_id, reply=reply, follow_ups=follow_ups)

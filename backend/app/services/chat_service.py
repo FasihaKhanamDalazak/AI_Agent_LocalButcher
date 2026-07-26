@@ -1,3 +1,4 @@
+import logging
 import re
 import uuid
 
@@ -11,6 +12,8 @@ from app.llm.safety_filter import filter_reply
 from app.models.conversation import Conversation, Message
 from app.models.user import User
 from app.services import cart_service
+
+logger = logging.getLogger(__name__)
 
 # Only the last N *text* turns are replayed to the model as context — no
 # vector memory, no tool-call replay across requests. This mirrors the
@@ -44,26 +47,33 @@ def _extract_follow_ups(reply_text: str) -> tuple[str, list[str]]:
     return cleaned, follow_ups[:FOLLOW_UP_CHIP_LIMIT]
 
 
-class ConversationNotFoundError(Exception):
-    pass
-
-
 async def _get_or_create_conversation(
     db: AsyncSession, user_id: uuid.UUID, conversation_id: uuid.UUID | None
 ) -> Conversation:
-    if conversation_id is None:
-        conversation = Conversation(user_id=user_id, channel="chat")
-        db.add(conversation)
-        await db.commit()
-        await db.refresh(conversation)
-        return conversation
+    if conversation_id is not None:
+        result = await db.execute(
+            select(Conversation).where(Conversation.id == conversation_id, Conversation.user_id == user_id)
+        )
+        conversation = result.scalar_one_or_none()
+        if conversation is not None:
+            return conversation
+        # Reported directly: a real customer's session sometimes carried a
+        # conversation_id (e.g. handed off from a voice turn) that this
+        # lookup couldn't find, hard-blocking every further message with a
+        # 404 until they reloaded — worse than silently starting fresh.
+        # Logged so a real root cause can still be tracked down, but never
+        # blocks the customer on it (same "don't hard-block a core feature
+        # over an edge case" call as the delivery-address fallback above).
+        logger.warning(
+            "conversation_id %s not found for user %s — starting a new conversation instead of blocking",
+            conversation_id,
+            user_id,
+        )
 
-    result = await db.execute(
-        select(Conversation).where(Conversation.id == conversation_id, Conversation.user_id == user_id)
-    )
-    conversation = result.scalar_one_or_none()
-    if conversation is None:
-        raise ConversationNotFoundError()
+    conversation = Conversation(user_id=user_id, channel="chat")
+    db.add(conversation)
+    await db.commit()
+    await db.refresh(conversation)
     return conversation
 
 

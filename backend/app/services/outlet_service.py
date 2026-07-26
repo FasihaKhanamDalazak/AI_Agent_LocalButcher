@@ -47,12 +47,24 @@ async def get_nearest_outlet(
     # nobody can probe outlet distances using someone else's saved address.
     if address is None or address.user_id != user_id:
         raise AddressNotFoundError()
-    if address.lat is None or address.lng is None:
-        raise AddressMissingLocationError()
 
     outlets = await list_outlets(db)
     if not outlets:
         raise NoActiveOutletsError()
+
+    if address.lat is None or address.lng is None:
+        # Chat-added addresses never get real coordinates (no geocoding in
+        # this project — see add_address). Blocking EVERY delivery order
+        # from any such address — including a brand-new account's very
+        # first address, which is ALL of them — was worse than an
+        # approximate check: Local Butcher only serves Hyderabad at all,
+        # so an address text that at least says "Hyderabad" is treated as
+        # deliverable by the first active outlet, without a precise
+        # distance/radius check. An address that doesn't even mention
+        # Hyderabad still can't be confirmed deliverable at all.
+        if "hyderabad" in address.address_text.lower():
+            return outlets[0], 0.0, True
+        raise AddressMissingLocationError()
 
     scored = [(o, haversine_km(address.lat, address.lng, o.lat, o.lng)) for o in outlets]
     scored.sort(key=lambda pair: pair[1])
