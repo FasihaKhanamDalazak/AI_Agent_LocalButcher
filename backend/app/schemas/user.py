@@ -25,3 +25,7 @@ class UserRead(BaseModel):
     email: EmailStr
     phone: str | None
     preferred_language: str
+    # Included so the frontend can show/hide the staff dashboard link —
+    # a user's own role is not sensitive relative to themselves, unlike
+    # exposing another user's data would be.
+    role: str

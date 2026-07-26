@@ -16,12 +16,22 @@ class StaffOrderStatusUpdate(BaseModel):
 
 
 class StaffOrderRead(OrderRead):
-    # The one field customer-facing OrderRead deliberately omits — staff
-    # need to know which customer an order belongs to, customers never see
-    # another customer's identifier.
+    # Fields customer-facing OrderRead deliberately omits — staff need to
+    # know which customer an order belongs to and how to reach them;
+    # customers never see another customer's identifier or another
+    # outlet's internal name this way.
     user_id: uuid.UUID
+    customer_name: str
+    customer_phone: str | None
+    outlet_name: str
 
 
 def staff_order_to_read(order: "Order") -> StaffOrderRead:
     base = order_to_read(order)
-    return StaffOrderRead(**base.model_dump(), user_id=order.user_id)
+    return StaffOrderRead(
+        **base.model_dump(),
+        user_id=order.user_id,
+        customer_name=order.user.name,
+        customer_phone=order.user.phone,
+        outlet_name=order.outlet.name,
+    )

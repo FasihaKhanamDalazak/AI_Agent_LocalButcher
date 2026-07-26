@@ -300,6 +300,34 @@ export async function createSupportTicket({ issueText, orderId }) {
 }
 
 // ---------------------------------------------------------------------------
+// Staff (dashboard) — every call here 403s server-side unless the logged-in
+// user's role is "staff" (see backend get_current_staff_user); the frontend
+// only uses these behind that same role check, never as the real guard.
+// ---------------------------------------------------------------------------
+
+/** @param {{statusCode?: string, outletId?: string}} [filters] */
+export async function listStaffOrders({ statusCode, outletId } = {}) {
+  try {
+    const params = {};
+    if (statusCode) params.status = statusCode;
+    if (outletId) params.outlet_id = outletId;
+    const { data } = await httpClient.get("/staff/orders", { params });
+    return data;
+  } catch (error) {
+    throw normalizeApiError(error);
+  }
+}
+
+export async function updateStaffOrderStatus(orderId, statusCode) {
+  try {
+    const { data } = await httpClient.patch(`/staff/orders/${orderId}/status`, { status_code: statusCode });
+    return data;
+  } catch (error) {
+    throw normalizeApiError(error);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Error normalization
 // ---------------------------------------------------------------------------
 

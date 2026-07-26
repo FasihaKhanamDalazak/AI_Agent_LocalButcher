@@ -57,6 +57,10 @@ class Order(Base, UUIDPKMixin, TimestampMixin):
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan")
     status: Mapped["OrderStatus"] = relationship()
     outlet: Mapped["Outlet"] = relationship()
+    # Staff-dashboard read only (see staff_order_to_read) — customer-facing
+    # OrderRead never surfaces another user's data, so nothing outside the
+    # staff path should eager-load or expose this relationship.
+    user: Mapped["User"] = relationship()
 
 
 class OrderItem(Base, UUIDPKMixin):

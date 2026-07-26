@@ -37,7 +37,7 @@ class AssistantUnavailableError(Exception):
     """
 
     def __init__(self):
-        super().__init__("Ria's a little overwhelmed right now — please try again in a moment.")
+        super().__init__("The assistant is a little overwhelmed right now — please try again in a moment.")
 
 
 async def run_conversation_turn(

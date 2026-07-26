@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_staff_user
@@ -10,6 +10,17 @@ from app.schemas.staff import StaffOrderRead, StaffOrderStatusUpdate, staff_orde
 from app.services import order_service
 
 router = APIRouter()
+
+
+@router.get("/orders", response_model=list[StaffOrderRead])
+async def list_orders(
+    status_code: str | None = Query(default=None, alias="status"),
+    outlet_id: uuid.UUID | None = Query(default=None),
+    current_staff: User = Depends(get_current_staff_user),
+    db: AsyncSession = Depends(get_db),
+):
+    orders = await order_service.list_orders_for_staff(db, status_code=status_code, outlet_id=outlet_id)
+    return [staff_order_to_read(o) for o in orders]
 
 
 @router.get("/orders/{order_id}", response_model=StaffOrderRead)

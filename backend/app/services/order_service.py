@@ -143,14 +143,45 @@ async def get_order_by_id(db: AsyncSession, order_id: uuid.UUID) -> Order:
     Staff-only lookup — deliberately NOT scoped to a user_id, since staff
     need to look up any customer's order. Only ever call this from behind
     get_current_staff_user; never expose it to a customer-facing endpoint.
+    Eager-loads user/outlet too (on top of items/status) since
+    staff_order_to_read reads order.user.name/phone and order.outlet.name —
+    async SQLAlchemy can't lazy-load those on demand.
     """
     result = await db.execute(
-        select(Order).options(selectinload(Order.items), selectinload(Order.status)).where(Order.id == order_id)
+        select(Order)
+        .options(
+            selectinload(Order.items), selectinload(Order.status), selectinload(Order.user), selectinload(Order.outlet)
+        )
+        .where(Order.id == order_id)
     )
     order = result.scalar_one_or_none()
     if order is None:
         raise OrderNotFoundError()
     return order
+
+
+async def list_orders_for_staff(
+    db: AsyncSession, status_code: str | None = None, outlet_id: uuid.UUID | None = None
+) -> list[Order]:
+    """
+    Staff dashboard listing — unlike list_orders (below), never scoped to a
+    single user_id. Same eager-load set as get_order_by_id for the same
+    reason (staff_order_to_read needs user/outlet without lazy-loading).
+    """
+    query = (
+        select(Order)
+        .join(Order.status)
+        .options(
+            selectinload(Order.items), selectinload(Order.status), selectinload(Order.user), selectinload(Order.outlet)
+        )
+        .order_by(Order.created_at.desc())
+    )
+    if status_code is not None:
+        query = query.where(OrderStatus.code == status_code)
+    if outlet_id is not None:
+        query = query.where(Order.outlet_id == outlet_id)
+    result = await db.execute(query)
+    return list(result.scalars().all())
 
 
 async def list_orders(db: AsyncSession, user_id: uuid.UUID) -> list[Order]:
@@ -273,6 +304,13 @@ async def _restore_stock_and_cancel(db: AsyncSession, order: Order, actor_user_i
 
     cancelled_status = await _get_status_by_code(db, "cancelled")
     order.status_id = cancelled_status.id
+    # Also update the relationship object directly, not just the FK column
+    # — the session is expire_on_commit=False, so an already-loaded
+    # order.status (from the get_order/get_order_by_id call before this)
+    # would otherwise keep pointing at the OLD status after commit; the
+    # caller's subsequent re-fetch doesn't fix this either, since a plain
+    # select() never refreshes an object already in the identity map.
+    order.status = cancelled_status
 
     db.add(AuditLog(entity_type="order", entity_id=order.id, action="cancelled", actor_user_id=actor_user_id, details=None))
 
@@ -311,6 +349,7 @@ async def set_order_status(db: AsyncSession, order_id: uuid.UUID, status_code: s
             await _restore_stock_and_cancel(db, order, actor_user_id)
         else:
             order.status_id = new_status.id
+            order.status = new_status  # see _restore_stock_and_cancel's comment on the same pattern
             db.add(
                 AuditLog(
                     entity_type="order",
@@ -399,7 +438,13 @@ async def remove_order_item(db: AsyncSession, user_id: uuid.UUID, order_id: uuid
             stock.version += 1
 
         order.total_amount = order.total_amount - (item.price_at_order * item.quantity)
-        await db.delete(item)
+        # order.items has cascade="all, delete-orphan" — removing it from the
+        # collection (not db.delete(item) directly) both deletes the row on
+        # flush AND keeps order.items correct in memory for the rest of this
+        # request; db.delete() alone leaves the already-loaded collection
+        # still holding the removed item until a brand-new session re-reads it
+        # (same expire_on_commit=False issue as the order-status case above).
+        order.items.remove(item)
 
         db.add(
             AuditLog(
