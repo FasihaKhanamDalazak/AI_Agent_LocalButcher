@@ -1,11 +1,16 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
+// "center" (default) centers the bubble on the trigger, which overflows
+// off-screen for a trigger sitting near a screen edge on a narrow
+// viewport (the mic/send buttons in ChatInput, close to the right edge on
+// mobile) — "end" anchors the bubble's own edge to the trigger's edge
+// instead, so it only ever grows inward, never past the viewport.
 const SIDE_POSITION = {
-  top: "bottom-full left-1/2 mb-2 -translate-x-1/2",
-  bottom: "top-full left-1/2 mt-2 -translate-x-1/2",
-  left: "right-full top-1/2 mr-2 -translate-y-1/2",
-  right: "left-full top-1/2 ml-2 -translate-y-1/2",
+  top: { center: "bottom-full left-1/2 mb-2 -translate-x-1/2", end: "bottom-full right-0 mb-2" },
+  bottom: { center: "top-full left-1/2 mt-2 -translate-x-1/2", end: "top-full right-0 mt-2" },
+  left: { center: "right-full top-1/2 mr-2 -translate-y-1/2", end: "right-full top-1/2 mr-2 -translate-y-1/2" },
+  right: { center: "left-full top-1/2 ml-2 -translate-y-1/2", end: "left-full top-1/2 ml-2 -translate-y-1/2" },
 };
 
 const SIDE_OFFSET = {
@@ -24,8 +29,10 @@ const SIDE_OFFSET = {
  *
  * @param {string} label
  * @param {"top"|"bottom"|"left"|"right"} [side="top"]
+ * @param {"center"|"end"} [align="center"] - "end" for a trigger near a
+ *   screen edge (see SIDE_POSITION above)
  */
-function Tooltip({ label, side = "top", children }) {
+function Tooltip({ label, side = "top", align = "center", children }) {
   const [isVisible, setIsVisible] = useState(false);
 
   if (!label) return children;
@@ -50,7 +57,7 @@ function Tooltip({ label, side = "top", children }) {
             className={`
               pointer-events-none absolute z-50 whitespace-nowrap rounded-card-sm
               border border-line bg-ink px-3 py-1.5 text-xs font-medium text-cream shadow-card
-              ${SIDE_POSITION[side]}
+              ${SIDE_POSITION[side][align]}
             `}
           >
             {label}

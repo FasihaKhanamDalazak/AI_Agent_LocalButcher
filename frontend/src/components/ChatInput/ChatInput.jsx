@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowUp, Mic } from "lucide-react";
+import { ArrowUp, Loader2, Mic } from "lucide-react";
 import Tooltip from "../Tooltip/Tooltip.jsx";
 
 const MAX_TEXTAREA_HEIGHT_PX = 160;
@@ -16,6 +16,8 @@ const MAX_TEXTAREA_HEIGHT_PX = 160;
  * @param {() => void} onMicClick
  * @param {boolean} [isRecording] - live voice turn in progress
  * @param {boolean} [isConnecting] - voice socket/mic permission still opening
+ * @param {boolean} [isProcessingVoice] - utterance sent, reply not back yet — distinct
+ *   from isRecording so a several-second reply doesn't look like nothing happened
  * @param {string} [interimTranscript] - live (not-yet-final) speech-to-text preview
  */
 function ChatInput({
@@ -24,6 +26,7 @@ function ChatInput({
   onMicClick,
   isRecording = false,
   isConnecting = false,
+  isProcessingVoice = false,
   interimTranscript = "",
 }) {
   const [value, setValue] = useState("");
@@ -77,9 +80,13 @@ function ChatInput({
             rows={1}
             enterKeyHint="send"
             placeholder={
-              isRecording ? interimTranscript || "Listening…" : "Ask anything about LocalButcher…"
+              isProcessingVoice
+                ? "Thinking…"
+                : isRecording
+                  ? interimTranscript || "Listening…"
+                  : "Ask anything about LocalButcher…"
             }
-            disabled={isLoading || isRecording}
+            disabled={isLoading || isRecording || isProcessingVoice}
             aria-label="Message"
             className="
               max-h-40 flex-1 resize-none self-center bg-transparent py-1.5 text-sm sm:text-base
@@ -89,30 +96,47 @@ function ChatInput({
           />
 
           <div className="flex shrink-0 items-center gap-1">
-            <Tooltip label={isConnecting ? "Connecting…" : isRecording ? "Stop voice input" : "Speak your message"}>
+            <Tooltip
+              label={
+                isProcessingVoice
+                  ? "Thinking…"
+                  : isConnecting
+                    ? "Connecting…"
+                    : isRecording
+                      ? "Stop voice input"
+                      : "Speak your message"
+              }
+              align="end"
+            >
               <motion.button
                 type="button"
                 onClick={onMicClick}
-                disabled={isConnecting}
+                disabled={isConnecting || isProcessingVoice}
                 whileTap={{ scale: 0.92 }}
                 aria-label={isRecording ? "Stop voice input" : "Speak your message"}
                 aria-pressed={isRecording}
                 className={`
                   flex h-10 w-10 items-center justify-center rounded-full
                   transition duration-200 focus-visible:outline-none
-                  disabled:cursor-not-allowed disabled:opacity-60
+                  disabled:cursor-not-allowed
                   ${
                     isRecording
                       ? "animate-pulse-dot bg-red text-white"
-                      : "text-ink-soft hover:bg-line/60 hover:text-red"
+                      : isProcessingVoice
+                        ? "text-red"
+                        : "text-ink-soft hover:bg-line/60 hover:text-red disabled:opacity-60"
                   }
                 `}
               >
-                <Mic size={18} strokeWidth={2} />
+                {isProcessingVoice ? (
+                  <Loader2 size={18} strokeWidth={2} className="animate-spin" />
+                ) : (
+                  <Mic size={18} strokeWidth={2} />
+                )}
               </motion.button>
             </Tooltip>
 
-            <Tooltip label="Send message">
+            <Tooltip label="Send message" align="end">
               <motion.button
                 type="button"
                 onClick={handleSend}

@@ -23,6 +23,18 @@ function floatTo16BitPCM(float32Array) {
  * setConversationId, which this hook reads from and writes back to so a
  * customer can freely switch between typing and talking mid-conversation).
  *
+ * Push-to-talk, one turn per connection: the mic stops capturing the
+ * moment the backend confirms it heard a complete utterance
+ * (final_transcript) rather than staying open for the whole visit — both
+ * because leaving a mic capturing indefinitely after the customer's done
+ * talking is bad practice, and because "still listening" with no other
+ * feedback is exactly what read as "nothing happened" when a reply
+ * actually takes several seconds (tool call + generation) to arrive. The
+ * WS itself stays open just long enough to receive that reply, then
+ * closes — the NEXT tap opens a fresh connection, continuing the same
+ * conversation via conversationId (see voice_service._load_agent_history
+ * on the backend), not starting over.
+ *
  * Mic capture uses a ScriptProcessorNode rather than an AudioWorklet —
  * deprecated but universally supported without shipping a separate
  * worklet module, and simplicity was the explicit call made for every
@@ -34,6 +46,11 @@ function floatTo16BitPCM(float32Array) {
 export function useVoiceChat({ conversationId, setConversationId, appendMessage }) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  // True from the moment the mic stops (final_transcript) until the reply
+  // arrives — the "thinking" state ChatInput shows distinctly from
+  // "still listening", so a several-second wait doesn't look like nothing
+  // is happening.
+  const [isProcessing, setIsProcessing] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
   const [error, setError] = useState(null);
 
@@ -43,7 +60,10 @@ export function useVoiceChat({ conversationId, setConversationId, appendMessage 
   const sourceRef = useRef(null);
   const streamRef = useRef(null);
 
-  const cleanup = useCallback(() => {
+  // Tears down mic capture only — NOT the WebSocket, which needs to stay
+  // open a little longer to receive the pending reply. Safe to call
+  // multiple times (e.g. also from the full cleanup below).
+  const stopMicCapture = useCallback(() => {
     processorRef.current?.disconnect();
     sourceRef.current?.disconnect();
     processorRef.current = null;
@@ -56,6 +76,10 @@ export function useVoiceChat({ conversationId, setConversationId, appendMessage 
       audioContextRef.current.close();
     }
     audioContextRef.current = null;
+  }, []);
+
+  const cleanup = useCallback(() => {
+    stopMicCapture();
 
     if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) {
       wsRef.current.close();
@@ -64,8 +88,9 @@ export function useVoiceChat({ conversationId, setConversationId, appendMessage 
 
     setIsRecording(false);
     setIsConnecting(false);
+    setIsProcessing(false);
     setInterimTranscript("");
-  }, []);
+  }, [stopMicCapture]);
 
   const stop = useCallback(() => {
     cleanup();
@@ -134,6 +159,12 @@ export function useVoiceChat({ conversationId, setConversationId, appendMessage 
           setInterimTranscript(data.text);
           break;
         case "final_transcript":
+          // Mic's job is done — stop capturing immediately and switch to
+          // a distinct "processing" state while the reply is generated,
+          // rather than staying visually "still listening".
+          stopMicCapture();
+          setIsRecording(false);
+          setIsProcessing(true);
           setInterimTranscript("");
           appendMessage({ role: MESSAGE_ROLES.USER, text: data.text });
           break;
@@ -143,6 +174,9 @@ export function useVoiceChat({ conversationId, setConversationId, appendMessage 
           if (data.audio_base64) {
             new Audio(`data:audio/wav;base64,${data.audio_base64}`).play().catch(() => {});
           }
+          // This turn is complete — close out. The next tap opens a fresh
+          // connection for the next turn (see hook-level doc comment).
+          cleanup();
           break;
         case "error":
           setError(data.message);
@@ -161,12 +195,13 @@ export function useVoiceChat({ conversationId, setConversationId, appendMessage 
       else if (event.code === 4429) setError("Too many voice connections — slow down a moment.");
       cleanup();
     };
-  }, [conversationId, setConversationId, appendMessage, cleanup]);
+  }, [conversationId, setConversationId, appendMessage, cleanup, stopMicCapture]);
 
   const toggleRecording = useCallback(() => {
+    if (isProcessing) return; // a reply is already on the way — nothing to toggle until it lands
     if (isRecording || isConnecting) stop();
     else start();
-  }, [isRecording, isConnecting, start, stop]);
+  }, [isRecording, isConnecting, isProcessing, start, stop]);
 
-  return { isRecording, isConnecting, interimTranscript, error, toggleRecording };
+  return { isRecording, isConnecting, isProcessing, interimTranscript, error, toggleRecording };
 }

@@ -101,6 +101,7 @@ function ChatPage() {
           onMicClick={voice.toggleRecording}
           isRecording={voice.isRecording}
           isConnecting={voice.isConnecting}
+          isProcessingVoice={voice.isProcessing}
           interimTranscript={voice.interimTranscript}
         />
       </div>
