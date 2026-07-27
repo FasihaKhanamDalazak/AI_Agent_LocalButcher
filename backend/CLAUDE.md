@@ -693,6 +693,24 @@ discarded, even though uvicorn's own access/error logs still appeared
 `main.py`, rather than routing around it — this affects every module's
 logging, not just the phone-call layer.
 
+**`/health` needs `HEAD` too, not just `GET` — this Starlette/FastAPI
+version doesn't auto-add it.** Found from a real false alarm: UptimeRobot
+(set up as the genuinely-external keep-alive pinger — see README
+"Deployment") sent repeated "down" alerts for a backend that was
+actually healthy the whole time. Reproduced directly: a bare
+`@app.get("/health")` answers `GET` with 200 but `HEAD` with a real 405
+(`Allow: GET` in the response header), confirmed both locally and
+against the live Render deployment — some HTTP frameworks/versions
+auto-register `HEAD` alongside `GET` on the same route, this one
+doesn't. UptimeRobot's default HTTP(s) monitor sends `HEAD` requests,
+not `GET`, for efficiency — most uptime pingers do. Fixed by switching
+to `@app.api_route("/health", methods=["GET", "HEAD"])`; verified `HEAD`
+now returns 200 with an empty body (correct — the `Content-Length`
+header still reflects what a `GET` would return, per HTTP spec, curl's
+"transfer closed with N bytes remaining" on a `HEAD` is expected, not an
+error). If any other route ever needs to support pinging/monitoring
+tools directly, remember this default doesn't cover `HEAD` for free.
+
 ## Order auto-progression
 
 **`order_service.auto_progress_orders`**, run every

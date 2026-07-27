@@ -596,3 +596,15 @@ this project isn't in version control yet — this is the only record.
     already been applied server-side before the response was lost —
     those get a clearer "server may be waking up, try again" message
     instead of a silent resubmit.
+21. **Fixed false "down" alerts from the new UptimeRobot pinger** — set
+    up as the genuinely-external replacement for the unreliable GitHub
+    Actions cron (see #20), it immediately started reporting the backend
+    as down with `405 Method Not Allowed`, even though it was actually
+    healthy. Root cause: `/health` was `@app.get(...)`-only, and this
+    FastAPI/Starlette version doesn't auto-register `HEAD` alongside
+    `GET` on the same route — confirmed with a direct `HEAD` request
+    both locally and against the live deployment, both returned a real
+    405 with `Allow: GET`. UptimeRobot's default HTTP(s) monitor sends
+    `HEAD`, not `GET`. Fixed by switching to
+    `@app.api_route("/health", methods=["GET", "HEAD"])`; verified `HEAD`
+    now correctly returns 200 with an empty body.

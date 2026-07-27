@@ -68,7 +68,14 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router, prefix="/api/v1")
 
-    @app.get("/health", tags=["system"])
+    # GET *and* HEAD, explicitly — this Starlette/FastAPI version doesn't
+    # auto-add HEAD support for a GET-only route (confirmed: a bare
+    # @app.get gave "Allow: GET" and a real 405 on HEAD, both locally and
+    # on the live Render deployment). That mattered in practice: uptime
+    # pingers (e.g. UptimeRobot's default HTTP(s) monitor) send HEAD
+    # requests, not GET, and were firing false "down" alerts against a
+    # backend that was actually healthy.
+    @app.api_route("/health", methods=["GET", "HEAD"], tags=["system"])
     async def health_check():
         return {"status": "ok", "environment": settings.ENVIRONMENT}
 
