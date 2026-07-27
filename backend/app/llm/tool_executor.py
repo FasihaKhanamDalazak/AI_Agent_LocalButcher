@@ -242,6 +242,17 @@ async def _get_order(db: AsyncSession, user: User, args: dict) -> dict:
     return order_to_read(order).model_dump(mode="json")
 
 
+async def _get_order_by_position(db: AsyncSession, user: User, args: dict) -> dict:
+    position = args.get("position")
+    if position not in ("first", "most_recent"):
+        raise ToolExecutionError("position must be 'first' or 'most_recent'.")
+    try:
+        order = await order_service.get_order_by_position(db, user.id, position)
+    except order_service.OrderNotFoundError:
+        raise ToolExecutionError("The customer doesn't have any orders yet.")
+    return order_to_read(order).model_dump(mode="json")
+
+
 async def _cancel_order(db: AsyncSession, user: User, args: dict) -> dict:
     order_id = _uuid(args, "order_id")
     try:
@@ -336,6 +347,7 @@ _HANDLERS = {
     "checkout": _checkout,
     "list_orders": _list_orders,
     "get_order": _get_order,
+    "get_order_by_position": _get_order_by_position,
     "cancel_order": _cancel_order,
     "update_order_item": _update_order_item,
     "remove_order_item": _remove_order_item,

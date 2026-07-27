@@ -175,6 +175,28 @@ TOOL_DECLARATIONS = [
         parameters=_obj({"order_id": _schema(types.Type.STRING, "UUID of the order")}, required=["order_id"]),
     ),
     types.FunctionDeclaration(
+        name="get_order_by_position",
+        description=(
+            "Get the customer's first/earliest/very first order, OR their most recent/previous/last "
+            "order — full details and current status, same shape as get_order. ALWAYS use this "
+            "instead of calling list_orders and figuring out chronology yourself whenever the "
+            "customer asks about an order by relative position rather than by number: \"what was my "
+            "first order\", \"my very first order\", \"my previous order\", \"my last order\", \"my "
+            "most recent order\". Do not use this for \"reorder\"/\"order that again\" requests — "
+            "use reorder_previous_order for those instead."
+        ),
+        parameters=_obj(
+            {
+                "position": _schema(
+                    types.Type.STRING,
+                    "'first' for the earliest order ever placed, 'most_recent' for the latest one",
+                    enum=["first", "most_recent"],
+                )
+            },
+            required=["position"],
+        ),
+    ),
+    types.FunctionDeclaration(
         name="cancel_order",
         description="Cancel an order, if it's still in a cancellable state (pending or confirmed).",
         parameters=_obj({"order_id": _schema(types.Type.STRING, "UUID of the order")}, required=["order_id"]),

@@ -27,6 +27,8 @@ class OrderItemModify(BaseModel):
 class OrderItemRead(BaseModel):
     id: uuid.UUID
     product_id: uuid.UUID
+    product_name: str
+    unit: str
     quantity: float
     price_at_order: float
 
@@ -88,6 +90,8 @@ def order_to_read(order: "Order") -> OrderRead:
             OrderItemRead(
                 id=i.id,
                 product_id=i.product_id,
+                product_name=i.product.name,
+                unit=i.product.unit,
                 quantity=float(i.quantity),
                 price_at_order=float(i.price_at_order),
             )

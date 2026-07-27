@@ -135,7 +135,7 @@ async def _lock_stock_row(db: AsyncSession, outlet_id: uuid.UUID, product_id: uu
 async def get_order(db: AsyncSession, user_id: uuid.UUID, order_id: uuid.UUID) -> Order:
     result = await db.execute(
         select(Order)
-        .options(selectinload(Order.items), selectinload(Order.status))
+        .options(selectinload(Order.items).selectinload(OrderItem.product), selectinload(Order.status))
         .where(Order.id == order_id, Order.user_id == user_id)
     )
     order = result.scalar_one_or_none()
@@ -156,7 +156,7 @@ async def get_order_by_id(db: AsyncSession, order_id: uuid.UUID) -> Order:
     result = await db.execute(
         select(Order)
         .options(
-            selectinload(Order.items), selectinload(Order.status), selectinload(Order.user), selectinload(Order.outlet)
+            selectinload(Order.items).selectinload(OrderItem.product), selectinload(Order.status), selectinload(Order.user), selectinload(Order.outlet)
         )
         .where(Order.id == order_id)
     )
@@ -178,7 +178,7 @@ async def list_orders_for_staff(
         select(Order)
         .join(Order.status)
         .options(
-            selectinload(Order.items), selectinload(Order.status), selectinload(Order.user), selectinload(Order.outlet)
+            selectinload(Order.items).selectinload(OrderItem.product), selectinload(Order.status), selectinload(Order.user), selectinload(Order.outlet)
         )
         .order_by(Order.created_at.desc())
     )
@@ -193,11 +193,31 @@ async def list_orders_for_staff(
 async def list_orders(db: AsyncSession, user_id: uuid.UUID) -> list[Order]:
     result = await db.execute(
         select(Order)
-        .options(selectinload(Order.items), selectinload(Order.status))
+        .options(selectinload(Order.items).selectinload(OrderItem.product), selectinload(Order.status))
         .where(Order.user_id == user_id)
         .order_by(Order.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+async def get_order_by_position(db: AsyncSession, user_id: uuid.UUID, position: str) -> Order:
+    """
+    Resolves "first"/"earliest" and "most recent"/"previous"/"last" order
+    requests in code, not in the model's own reasoning. Before this
+    existed, every channel's system prompt asked the model to call
+    list_orders (sorted newest-first) and work out on its own which end of
+    the array was "first" — a real, reported inconsistency: replies
+    sometimes picked the wrong order, and sometimes varied in whether they
+    mentioned item names at all, since it was all free-form generation
+    over a raw list rather than one deterministic lookup. list_orders is
+    already ordered newest-first, so "most_recent" is index 0 and "first"
+    is the last element — computed here once, not re-derived by the model
+    on every turn.
+    """
+    orders = await list_orders(db, user_id)
+    if not orders:
+        raise OrderNotFoundError()
+    return orders[0] if position == "most_recent" else orders[-1]
 
 
 async def checkout(
