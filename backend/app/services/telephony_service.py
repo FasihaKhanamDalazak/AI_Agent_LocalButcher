@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import logging
+import random
 import uuid
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -34,7 +35,26 @@ logger = logging.getLogger(__name__)
 # way the browser voice UI has). Sent via InjectAgentMessage right when a
 # FunctionCallRequest arrives, behavior="queue" so it never interrupts
 # speech already in flight, just plays next.
-_FILLER_PHRASE = "One moment, let me check that for you."
+#
+# Multiple variants, not one fixed string — a real call reported this
+# being said verbatim, back to back, whenever the model chained several
+# tool calls in a row (e.g. check stock, then add to cart), which reads
+# as robotic/repetitive over the phone. _pick_filler_phrase below rotates
+# through these and never repeats the one just used.
+_FILLER_PHRASES = [
+    "One moment, let me check that for you.",
+    "Give me just a second.",
+    "Let me look that up.",
+    "Got it, one second while I check.",
+]
+
+
+def _pick_filler_phrase(state: "_CallState") -> str:
+    choices = [p for p in _FILLER_PHRASES if p != state.last_filler_phrase]
+    phrase = random.choice(choices)
+    state.last_filler_phrase = phrase
+    return phrase
+
 
 GREETING_TEXT = (
     "Thanks for calling Local Butcher! I can answer general questions right away — for your cart, "
@@ -92,6 +112,8 @@ class _CallState:
         self.stream_sid: str | None = None
         self.verified_user: User | None = None
         self.conversation_id: uuid.UUID | None = None
+        # See _pick_filler_phrase above.
+        self.last_filler_phrase: str | None = None
         # See _flush_aligned_audio below — Deepgram's TTS output arrives in
         # arbitrarily-sized chunks that need re-aligning before Exotel will
         # play them back cleanly.
@@ -225,7 +247,7 @@ async def _relay_deepgram_to_exotel(
             # call over the phone (no visual "Thinking…" indicator exists
             # here the way the browser voice UI has).
             await dg_socket.send_inject_agent_message(
-                AgentV1InjectAgentMessage(message=_FILLER_PHRASE, behavior="queue")
+                AgentV1InjectAgentMessage(message=_pick_filler_phrase(state), behavior="queue")
             )
             for call in msg.functions:
                 try:

@@ -583,12 +583,26 @@ own pipeline) takes a few real seconds; without any audio during that
 gap, a phone call reads as dropped (unlike browser voice, which has a
 visual "Thinking…" indicator — see "Voice layer" — there's no visual
 equivalent over a phone line). Every `FunctionCallRequest` batch now gets
-one spoken filler (`_FILLER_PHRASE`, `behavior="queue"` so it never
-interrupts speech already in flight, just plays next) before dispatching.
+one spoken filler (`behavior="queue"` so it never interrupts speech
+already in flight, just plays next) before dispatching. The filler line
+is picked from `_FILLER_PHRASES` via `_pick_filler_phrase`, never
+repeating the one just used (`_CallState.last_filler_phrase`) — a real
+call reported the original single fixed string (`"One moment, let me
+check that for you."`) being said verbatim back to back whenever the
+model chained multiple tool calls in a row, which read as robotic.
 `verify_phone_number` succeeding specifically ALSO gets a guaranteed
 spoken confirmation injected directly — not left to the model's own
 "think" step to remember, after a real report of the call sometimes
 going fully silent right after verification instead of confirming it.
+A real call then reported the opposite problem — the model's own
+"think" step ALSO acknowledged the successful verification in its own
+words right after, so the caller heard two "thank you"/"you're
+verified" lines back to back, one generic (the model's) and one
+personalized (the injected one). Fixed in `call_system_prompt.py`'s
+"Identity and verification" section: the model is explicitly told never
+to acknowledge verification succeeding itself, since the injected line
+already covers it, and to go straight into helping with the caller's
+original ask instead.
 Both mechanisms verified directly against the live Deepgram service
 (not just code review): `send_inject_agent_message` correctly produces a
 `ConversationText` event followed by real audio bytes, no errors.
