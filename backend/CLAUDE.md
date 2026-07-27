@@ -212,6 +212,27 @@ right message count, no duplicates, matching the multi-fragment-reply
 bug already fixed once for voice (accumulate `ConversationText` fragments
 into one string before returning, don't persist per-fragment).
 
+**A second fragment bug, found after real use, not testing**: accumulating
+fragments is right, but `deepgram_chat_client.py` originally joined them
+with a plain space (`" ".join(reply_parts)`) — fine for voice, where the
+joined string is only ever spoken aloud, but wrong for text chat, which
+renders the result as real Markdown (`ChatMessage.jsx`'s `ReactMarkdown`).
+Deepgram fragments a reply at sentence/utterance boundaries the same way
+for every channel; when the model wrote a real multi-line bullet list,
+each bullet arrived as its own fragment, and joining with a space
+collapsed the newlines between them into one run-on `"* item * item"`
+paragraph — not valid Markdown, so it rendered broken instead of as a
+list. Fixed with `_join_reply_fragments`: re-inserts a newline only
+before a fragment that itself starts with a Markdown list marker
+(`"- "`, `"* "`, `"1. "`), so list structure survives while ordinary
+multi-fragment prose still joins into one flowing sentence as before.
+`system_prompt.py`'s tone section also now explicitly requires real
+multi-line Markdown for any bullet list (never inline `"* item * item"`)
+as a belt-and-suspenders guard — but this join fix is the actual root
+cause fix; the prompt change alone wouldn't have been enough since a
+correctly-formatted multi-line list from the model still gets fragmented
+and needs correct rejoining.
+
 **Conversation memory is intentionally simple**: only the last 20 text
 messages replay as history — no tool-call replay, no vector store. This
 caused a real bug once (model re-added a cart item on "proceed to

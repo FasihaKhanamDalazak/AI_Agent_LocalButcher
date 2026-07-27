@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 import uuid
 
 from deepgram.agent.v1.types import (
@@ -54,6 +55,34 @@ _UNUSED_SAMPLE_RATE = 16000
 # below runs concurrently with the main event loop for exactly this reason.
 _KEEP_ALIVE_SILENCE_CHUNK = b"\x00\x00" * 1600  # 100ms of silence at 16kHz/16-bit mono
 _KEEP_ALIVE_INTERVAL_SECONDS = 0.5
+
+
+# Matches a fragment that opens with a Markdown list marker ("- ", "* ",
+# "1. ") — Deepgram's Voice Agent splits one reply into several
+# ConversationText fragments at sentence/utterance boundaries (proven
+# already for the voice channels — see backend CLAUDE.md's "Voice layer"
+# — same product, same behavior here). That's harmless when the text is
+# only ever spoken aloud, but text chat renders the reassembled string as
+# real Markdown: a plain " ".join collapsed every newline the model wrote
+# between list bullets into a single space, turning a real multi-line
+# list into one run-on "* item * item * item" paragraph that no longer
+# parses as a list. Re-inserting a newline specifically before a fragment
+# that starts a new list item (and only there — normal sentences still
+# join with a space, so ordinary prose doesn't get a stray line break per
+# sentence) restores the structure the model actually wrote.
+_LIST_ITEM_START_RE = re.compile(r"^(?:[-*]\s|\d+\.\s)")
+
+
+def _join_reply_fragments(parts: list[str]) -> str:
+    result = ""
+    for part in parts:
+        if not result:
+            result = part
+        elif _LIST_ITEM_START_RE.match(part.lstrip()):
+            result += "\n" + part
+        else:
+            result += " " + part
+    return result
 
 
 async def _load_history(db: AsyncSession, conversation_id: uuid.UUID) -> list[dict]:
@@ -145,7 +174,7 @@ async def run_conversation_turn(
                         logger.error("Deepgram Voice Agent error on text chat: %s (%s)", msg.description, msg.code)
                         raise AssistantUnavailableError()
 
-                return " ".join(reply_parts)
+                return _join_reply_fragments(reply_parts)
             finally:
                 keep_alive_task.cancel()
                 try:
