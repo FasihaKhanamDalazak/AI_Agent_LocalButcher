@@ -23,9 +23,20 @@ async def create_address(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await address_service.create_address(
-        db, current_user.id, data.label, data.address_text, data.lat, data.lng, data.is_default
-    )
+    try:
+        return await address_service.create_address(
+            db, current_user.id, data.label, data.address_text, data.lat, data.lng, data.is_default
+        )
+    except address_service.AddressLimitReachedError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"You can save up to {address_service.MAX_ADDRESSES_PER_USER} addresses — "
+            "delete one before adding another.",
+        )
+    except address_service.DuplicateLabelError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=f"An address labeled '{e.label}' already exists."
+        )
 
 
 @router.patch("/{address_id}", response_model=AddressRead)
@@ -48,6 +59,10 @@ async def update_address(
         )
     except address_service.AddressNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Address not found")
+    except address_service.DuplicateLabelError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=f"An address labeled '{e.label}' already exists."
+        )
 
 
 @router.delete("/{address_id}", status_code=status.HTTP_204_NO_CONTENT)

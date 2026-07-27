@@ -321,6 +321,34 @@ this fallback changes. Verified against the real database both ways: a
 Hyderabad-text address with no coordinates checked out successfully; a
 non-Hyderabad address with no coordinates was still correctly blocked.
 
+**Addresses are capped at `MAX_ADDRESSES_PER_USER` (4), and labels must be
+unique per user** — both enforced in `address_service.py`, not just the
+schema, so every caller (REST `POST/PATCH /addresses`, and the
+`add_address`/`update_address` tools every chat/voice/call channel
+shares) gets the same rule with no way to route around it. A real bug,
+not theoretical: production data had a user with two addresses both
+labeled `"Home"` (one `"Home"`, one `"home"`) before this existed.
+Label comparison is case-insensitive and whitespace-trimmed
+(`_labels_match` — `casefold()`, not `lower()`, for correctness beyond
+ASCII) so `"Home"` and `" home "` collide. `update_address` only runs the
+duplicate check when the label is actually *changing* — renaming an
+address to a same-case-insensitive variant of its own current label (or
+not touching the label at all) is a no-op, not a false-positive
+rejection; this also means **pre-existing duplicate-labeled rows from
+before this fix are left alone**, not retroactively fixed — they just
+can't get worse, and editing their other fields still works normally.
+`AddressLimitReachedError`/`DuplicateLabelError` are caught at the REST
+layer (400/409) and the tool-executor layer (`ToolExecutionError`, with
+wording that tells the model to ask the customer for a different label
+rather than just failing silently). `CartPanel`'s address dropdown is
+unaffected; `AddressesPanel.jsx` disables its "Add address" button once
+at 4 rather than only surfacing the failure after a submit attempt.
+Verified against the real database: 5th address on an already-4-address
+test account correctly rejected; a same-labeled create/rename (case and
+whitespace variants) correctly rejected; renaming an address to its own
+existing label (different case) correctly succeeds with no false
+positive.
+
 **Currency**: `settings.CURRENCY_LABEL` (default `"Rs."`), referenced in
 both the system prompt and the grounding note. No currency is stored
 anywhere in the schema — this is a pure display setting. Change it in

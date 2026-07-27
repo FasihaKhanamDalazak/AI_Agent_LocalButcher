@@ -5,6 +5,7 @@ import TextField from "../TextField/TextField.jsx";
 import * as api from "../../services/api.js";
 
 const EMPTY_FORM = { label: "", addressText: "" };
+const MAX_ADDRESSES = 4;
 
 /**
  * Address book. Deliberately text-only — no lat/lng inputs — matching the
@@ -162,6 +163,12 @@ function AddressesPanel({ isOpen, onClose }) {
             ))}
           </ul>
 
+          {!editingId && addresses.length >= MAX_ADDRESSES && (
+            <p className="mb-2 text-center text-xs text-ink-soft">
+              You've reached the limit of {MAX_ADDRESSES} saved addresses — delete one to add another.
+            </p>
+          )}
+
           {editingId ? (
             <form
               onSubmit={handleSave}
@@ -203,7 +210,8 @@ function AddressesPanel({ isOpen, onClose }) {
             <button
               type="button"
               onClick={startAdd}
-              className="flex w-full items-center justify-center gap-2 rounded-button border border-dashed border-line py-3 text-sm font-medium text-ink-soft transition hover:border-red/40 hover:text-red"
+              disabled={addresses.length >= MAX_ADDRESSES}
+              className="flex w-full items-center justify-center gap-2 rounded-button border border-dashed border-line py-3 text-sm font-medium text-ink-soft transition hover:border-red/40 hover:text-red disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-line disabled:hover:text-ink-soft"
             >
               <Plus size={15} /> Add address
             </button>

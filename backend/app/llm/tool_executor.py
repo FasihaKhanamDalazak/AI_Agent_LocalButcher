@@ -63,9 +63,19 @@ async def _add_address(db: AsyncSession, user: User, args: dict) -> dict:
     # way to know a text address's coordinates and must not guess them.
     # Delivery-range checks need it updated with real coordinates (or the
     # address text to mention Hyderabad) first — see AddressMissingLocationError.
-    address = await address_service.create_address(
-        db, user.id, label, address_text, lat=None, lng=None, is_default=bool(args.get("is_default") or False)
-    )
+    try:
+        address = await address_service.create_address(
+            db, user.id, label, address_text, lat=None, lng=None, is_default=bool(args.get("is_default") or False)
+        )
+    except address_service.AddressLimitReachedError:
+        raise ToolExecutionError(
+            f"The customer already has {address_service.MAX_ADDRESSES_PER_USER} saved addresses, the "
+            "maximum allowed — they'll need to delete one before adding another."
+        )
+    except address_service.DuplicateLabelError as e:
+        raise ToolExecutionError(
+            f"The customer already has an address labeled '{e.label}' — ask them to pick a different label."
+        )
     return AddressRead.model_validate(address).model_dump(mode="json")
 
 
@@ -84,6 +94,10 @@ async def _update_address(db: AsyncSession, user: User, args: dict) -> dict:
         )
     except address_service.AddressNotFoundError:
         raise ToolExecutionError("That address wasn't found.")
+    except address_service.DuplicateLabelError as e:
+        raise ToolExecutionError(
+            f"The customer already has an address labeled '{e.label}' — ask them to pick a different label."
+        )
     return AddressRead.model_validate(address).model_dump(mode="json")
 
 

@@ -32,7 +32,9 @@ TOOL_DECLARATIONS = [
             "Save a new delivery address for the customer. Note: this does NOT geocode the address — "
             "it has no precise location on file until updated with one separately, so delivery-range "
             "checks (get_nearest_outlet, checkout) can't confirm it's deliverable yet unless the "
-            "address text itself mentions Hyderabad. Mention this if relevant."
+            "address text itself mentions Hyderabad. Mention this if relevant. Customers can save up "
+            "to 4 addresses, and each label (e.g. 'Home', 'Office') must be unique — check "
+            "list_addresses first if unsure whether the customer's chosen label is already in use."
         ),
         parameters=_obj(
             {
@@ -45,7 +47,10 @@ TOOL_DECLARATIONS = [
     ),
     types.FunctionDeclaration(
         name="update_address",
-        description="Update the label, text, or default flag of one of the customer's saved addresses.",
+        description=(
+            "Update the label, text, or default flag of one of the customer's saved addresses. If "
+            "changing the label, it must not match another of the customer's existing labels."
+        ),
         parameters=_obj(
             {
                 "address_id": _schema(types.Type.STRING, "UUID of the address to update"),

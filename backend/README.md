@@ -528,3 +528,20 @@ this project isn't in version control yet — this is the only record.
     reads back as `"delivery"`) and confirmed the old `fulfillment_type`
     field is simply ignored, not accepted, by the new `CheckoutRequest`
     schema.
+18. **Fixed duplicate address labels; capped addresses at 4 per
+    customer** — a real bug found in production data: a user ended up
+    with two addresses both effectively labeled "Home" (different
+    case). `address_service.py` now enforces both rules directly
+    (case-insensitive, whitespace-trimmed label comparison; a hard cap
+    of 4 saved addresses), for every caller — REST and the
+    add_address/update_address tools chat, voice, and calls all share —
+    not just a frontend-only check. Renaming an address to its own
+    current label (or not touching the label) is correctly still a
+    no-op, not a false-positive rejection. Pre-existing duplicate rows
+    from before this fix are left alone (not retroactively cleaned up)
+    but can't get worse. `AddressesPanel.jsx` now disables "Add address"
+    once at the limit instead of only failing after submit. Verified
+    against the real database: a 5th address on an already-full test
+    account was correctly rejected, a case/whitespace-variant duplicate
+    label was correctly rejected on both create and rename, and renaming
+    to the same label in a different case correctly succeeded.
