@@ -361,7 +361,16 @@ function normalizeApiError(error) {
   }
 
   if (error.request) {
-    return new Error("Couldn't reach the server. Check your connection and try again.");
+    // By the time this fires, httpClient's response interceptor has
+    // already retried once for GET requests (see httpClient.js) — so this
+    // is either a genuinely dead connection, or a POST/PATCH/DELETE that
+    // hit a slow Render cold start and wasn't safe to auto-retry. Either
+    // way, telling the customer to wait a moment is more accurate than
+    // just "check your connection" — the server itself is very likely
+    // just waking up, not actually unreachable.
+    return new Error(
+      "Couldn't reach the server — it may just be waking up after being idle. Please try again in a few seconds."
+    );
   }
 
   return new Error("Unexpected error. Please try again.");

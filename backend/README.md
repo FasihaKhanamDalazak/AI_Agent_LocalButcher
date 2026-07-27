@@ -280,11 +280,27 @@ across the phone-call bridge's real-time audio relay (Exotel ↔ backend ↔
 Deepgram, every leg latency-sensitive). Noticeably worse call experience
 than a same-region VM would give, accepted as the cost of not needing a
 card. Its free web service also sleeps after 15 min idle with a 30-60s
-cold start — mitigated with an external keep-alive pinger (step 4 below),
-which keeps it from ever actually going idle long enough to sleep in
-normal operation, though this remains one more moving part than a
-persistent VM has (if the pinger itself has downtime, the next inbound
-call during that window can still miss Exotel's ~10s response budget).
+cold start — mitigated with a keep-alive pinger (step 4 below), though
+this remains one more moving part than a persistent VM has (if the
+pinger itself has downtime, the next inbound call during that window
+can still miss Exotel's ~10s response budget).
+
+**The first pinger implementation (`.github/workflows/keep-alive.yml`, a
+GitHub Actions `schedule` cron every 10 minutes) turned out NOT to be
+reliable enough, discovered from real symptoms, not assumed** — a
+customer hit "Couldn't reach the server" errors, and checking the
+workflow's actual run history (GitHub's public Actions API) showed runs
+firing roughly once an HOUR, not every 10 minutes: `01:21`, `23:44`,
+`22:44`, `21:43`... 50-70 minute gaps, comfortably past Render's 15-minute
+sleep threshold every time. This is a known GitHub Actions limitation —
+`schedule`-triggered workflows get silently delayed/throttled by GitHub's
+own infrastructure, worse for repos without constant activity — not a
+bug in the YAML. The workflow file is left in place (harmless, still
+fires eventually) but should NOT be trusted as the actual keep-alive
+mechanism; step 4 below is genuinely external and doesn't have this
+problem. `httpClient.js` also got a real-timeout bump (30s → 60s) and a
+GET-only auto-retry as a frontend-side safety net for whatever cold
+starts still slip through.
 
 **`Dockerfile`** at the repo root — multi-layer (deps from `uv.lock`
 installed before app code copied in, so code-only changes don't
@@ -545,3 +561,38 @@ this project isn't in version control yet — this is the only record.
     account was correctly rejected, a case/whitespace-variant duplicate
     label was correctly rejected on both create and rename, and renaming
     to the same label in a different case correctly succeeded.
+19. **Fixed inconsistent "what was my first/previous order" replies —
+    two separate bugs, both real, found together.** (a) Every channel's
+    prompt asked the model to call `list_orders` and work out chronology
+    itself, which sometimes picked the wrong order; fixed with a new
+    dedicated `get_order_by_position` tool that resolves "first" vs.
+    "most recent" deterministically in code
+    (`order_service.get_order_by_position`), with all three system
+    prompts now routing that phrasing to it instead. (b) The deeper root
+    cause: `OrderItemRead` never carried a product name at all, only a
+    `product_id` UUID — every order-describing tool had been returning
+    nameless items for the whole project's life, which is why replies
+    inconsistently mentioned products sometimes and not others (a
+    pattern `greeting_service.py` had already solved correctly for
+    itself, just never applied to the shared `order_to_read`
+    serializer). Fixed by eager-loading `OrderItem.product` everywhere
+    `Order.items` is loaded in `order_service.py`, and adding
+    `product_name`/`unit` to `OrderItemRead`. Verified against the real
+    database and a live Deepgram chat turn: "What was my first order?"
+    now correctly and consistently names the product every time.
+20. **Fixed the real cause of intermittent "Couldn't reach the server"
+    errors** — checked the keep-alive GitHub Action's actual run
+    history and found it firing roughly once an HOUR, not every 10
+    minutes as configured (a known GitHub Actions limitation: scheduled
+    workflow runs get delayed/throttled, worse for repos without
+    constant activity) — so Render's free tier (15-minute idle sleep)
+    kept actually going to sleep despite the pinger, and a 30-60s cold
+    start exceeded the frontend's 30s request timeout. Mitigated on the
+    frontend while a more reliable external pinger (outside GitHub
+    Actions) gets set up: `httpClient.js`'s timeout raised to 60s, GET
+    requests now auto-retry once after a network error (safe — nothing
+    to duplicate), and non-idempotent requests (POST/PATCH/DELETE) are
+    deliberately NOT auto-retried since the original request may have
+    already been applied server-side before the response was lost —
+    those get a clearer "server may be waking up, try again" message
+    instead of a silent resubmit.

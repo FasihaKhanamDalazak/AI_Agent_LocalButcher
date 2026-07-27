@@ -264,6 +264,50 @@ match the stored title-case values exactly. `tool_schemas.py`'s
 `list_products` description also lists the actual valid categories so the
 model has a real taxonomy to draw from instead of guessing blind.
 
+**`get_order_by_position` resolves "first order"/"previous order" in
+code, not in the model's own reasoning.** Before this tool existed, every
+channel's prompt told the model to call `list_orders` (sorted
+newest-first) and work out for itself which end of the array was
+"first" — a real, reported inconsistency: replies sometimes picked the
+wrong order entirely, on top of the item-name bug below.
+`order_service.get_order_by_position(db, user_id, position)` does the
+one deterministic lookup (`position="most_recent"` → index 0,
+`position="first"` → the last element) instead. All three system
+prompts now explicitly route "first"/"earliest"/"previous"/"last"/"most
+recent" order phrasing to this tool and forbid falling back to
+`list_orders` for it — don't let a future prompt edit reopen that gap by
+letting the model reason about chronology itself again.
+
+**The deeper root cause of the same inconsistency report: `OrderItemRead`
+never carried a product name — only `product_id` (a UUID).** Every
+order-describing tool (`list_orders`, `get_order`, `checkout`,
+`cancel_order`, `update_order_item`, `remove_order_item`, and now
+`get_order_by_position`) had been returning items with no name at all
+for the whole life of this project — the model had no way to say what
+was actually in an order except by guessing or omitting it, which is
+why replies inconsistently mentioned products sometimes and not others.
+`greeting_service.py` had already solved this correctly for its own
+purposes (`selectinload(Order.items).selectinload(OrderItem.product)`)
+but that pattern was never applied to the shared `order_to_read`
+serializer's callers. Fixed by nesting the same eager-load onto all four
+`selectinload(Order.items)` call sites in `order_service.py`
+(`get_order`, `get_order_by_id`, `list_orders_for_staff`, `list_orders`
+— `checkout`/`cancel_order`/`update_order_item`/`remove_order_item` all
+already return via `get_order`, so fixing that one call site covers
+them too) and adding `product_name`/`unit` to `OrderItemRead`, populated
+in `order_to_read()` from `item.product.name`/`item.product.unit`. This
+is the shared serializer every channel and REST both read from (rule #4
+above), so this one fix corrects what all of them show — if a future
+`selectinload(Order.items)` is added anywhere without the nested
+`.selectinload(OrderItem.product)`, `order_to_read` will raise trying to
+read `i.product.name` on an unloaded relationship; that's a deliberate,
+loud failure, not something to silence by catching the exception.
+Verified against the real database and the live LLM path: direct
+`tool_executor.execute_tool` calls for both `position="first"` and
+`position="most_recent"` returned correct `product_name`/`unit` values,
+and a real Deepgram-backed chat turn asking "What was my first order?"
+correctly named the product every time afterward.
+
 **Delivery radius is actually enforced, not just stored.**
 `Outlet.delivery_radius_km` existed from the start but was unused outside
 the `check_product_availability` alternate-outlet fallback. Now
