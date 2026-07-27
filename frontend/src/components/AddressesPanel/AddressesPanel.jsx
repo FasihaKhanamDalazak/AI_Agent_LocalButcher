@@ -4,15 +4,34 @@ import SlideOver from "../SlideOver/SlideOver.jsx";
 import TextField from "../TextField/TextField.jsx";
 import * as api from "../../services/api.js";
 
-const EMPTY_FORM = { label: "", addressText: "" };
+const LABEL_PRESETS = ["Home", "Office"];
+const EMPTY_FORM = { labelChoice: "Home", customLabel: "", addressText: "" };
 const MAX_ADDRESSES = 4;
 
+// An existing address's label might be a preset ("Home"/"Office", any case)
+// or a custom string saved before this picker existed (or via "Other") —
+// derive which chip should be pre-selected either way.
+function formFromAddress(address) {
+  const preset = LABEL_PRESETS.find((p) => p.toLowerCase() === address.label.trim().toLowerCase());
+  return preset
+    ? { labelChoice: preset, customLabel: "", addressText: address.address_text }
+    : { labelChoice: "Other", customLabel: address.label, addressText: address.address_text };
+}
+
 /**
- * Address book. Deliberately text-only — no lat/lng inputs — matching the
- * backend's own stance (see backend/CLAUDE.md: chat never sets
- * coordinates either) that there's no geocoding in this project, so a
- * free-text address is the honest shape for this data, not a placeholder
- * for a map picker that doesn't exist.
+ * Address book. Deliberately no lat/lng inputs for the address itself —
+ * matching the backend's own stance (see backend/CLAUDE.md: chat never
+ * sets coordinates either) that there's no geocoding in this project, so
+ * free-text address_text is the honest shape for that field, not a
+ * placeholder for a map picker that doesn't exist.
+ *
+ * The label is a Home/Office/Other chip picker, not free text — a real
+ * production bug (two addresses labeled "Home"/"home" on one account)
+ * showed free-text labels invite typo/casing duplicates even though the
+ * backend already blocks exact-duplicate labels case-insensitively.
+ * "Other" reveals a custom text field for anything that doesn't fit
+ * (a second home, "Mom's place", etc.) — see formFromAddress for how an
+ * existing custom label gets recognized as "Other" on edit.
  */
 function AddressesPanel({ isOpen, onClose }) {
   const [addresses, setAddresses] = useState([]);
@@ -50,7 +69,7 @@ function AddressesPanel({ isOpen, onClose }) {
   };
 
   const startEdit = (address) => {
-    setForm({ label: address.label, addressText: address.address_text });
+    setForm(formFromAddress(address));
     setEditingId(address.id);
   };
 
@@ -61,13 +80,18 @@ function AddressesPanel({ isOpen, onClose }) {
 
   const handleSave = async (e) => {
     e.preventDefault();
+    const label = form.labelChoice === "Other" ? form.customLabel.trim() : form.labelChoice;
+    if (!label) {
+      setError("Enter a label for this address.");
+      return;
+    }
     setIsSaving(true);
     setError(null);
     try {
       if (editingId === "new") {
-        await api.createAddress({ label: form.label, addressText: form.addressText });
+        await api.createAddress({ label, addressText: form.addressText });
       } else {
-        await api.updateAddress(editingId, { label: form.label, addressText: form.addressText });
+        await api.updateAddress(editingId, { label, addressText: form.addressText });
       }
       await load();
       cancelForm();
@@ -182,14 +206,35 @@ function AddressesPanel({ isOpen, onClose }) {
                   <X size={16} />
                 </button>
               </div>
-              <TextField
-                label="Label"
-                value={form.label}
-                onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
-                placeholder="Home, Office…"
-                required
-                maxLength={50}
-              />
+              <div>
+                <span className="mb-1.5 block text-sm font-medium text-ink">Label</span>
+                <div className="flex gap-2">
+                  {[...LABEL_PRESETS, "Other"].map((choice) => (
+                    <button
+                      key={choice}
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, labelChoice: choice }))}
+                      className={`rounded-chip border px-4 py-1.5 text-sm font-medium transition ${
+                        form.labelChoice === choice
+                          ? "border-red/50 bg-red/[0.08] text-red"
+                          : "border-line text-ink-soft hover:border-red/30 hover:text-red"
+                      }`}
+                    >
+                      {choice}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {form.labelChoice === "Other" && (
+                <TextField
+                  label="Custom label"
+                  value={form.customLabel}
+                  onChange={(e) => setForm((f) => ({ ...f, customLabel: e.target.value }))}
+                  placeholder="Mom's place, Gym…"
+                  required
+                  maxLength={50}
+                />
+              )}
               <TextField
                 label="Address"
                 value={form.addressText}

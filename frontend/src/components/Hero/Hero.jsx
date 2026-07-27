@@ -61,7 +61,7 @@ function Hero() {
                   "Track It In Real Time.",
                   "Recommend The Perfect Cut.",
                   "Manage Your Cart.",
-                  "Talk To Me — I'm Listening.",
+                  "Listen to You and Make Shopping Easier.",
                 ]}
                 loop={0}
                 cursor
